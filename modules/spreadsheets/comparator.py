@@ -13,10 +13,13 @@ from core.categories import CATEGORY_SHEETS
 from core.exceptions import ValidationError
 from core.export_service import export_sheets
 from core.file_service import resolve_output_dir, unique_path
-from core.normalizers import as_text, parse_number
+from core.normalizers import as_text
 from core.spreadsheet_service import SHEET_FILETYPES, read_table
 
-_BR_NUMBER = re.compile(r"-?\d{1,3}(\.\d{3})*,\d+|-?\d+,\d+")
+_BR_THOUSANDS = re.compile(r"\d{1,3}(?:\.\d{3})+")
+_BR_DECIMAL = re.compile(r"\d{1,3}(?:\.\d{3})*,\d+|\d+,\d+")
+_INTL_GROUPED = re.compile(r"\d{1,3}(?:,\d{3})*\.\d+")
+_INTL_DECIMAL = re.compile(r"\d+\.\d+")
 
 _TOLERANCE_EXAMPLES = "0, 0,01, 0.01 ou 1.000,00"
 
@@ -104,26 +107,75 @@ def parse_tolerance(value) -> float:
     return number
 
 
-def _numeric(text: str) -> float | None:
+def _numeric(value) -> float | None:
+    """Converte um valor em número seguindo o formato brasileiro do aplicativo.
+
+    Valores já numéricos são preservados (``1.234`` continua sendo um vírgula
+    dois três quatro). Para texto, pontos formando grupos de exatamente três
+    dígitos são milhar (``1.234``, ``12.345``, ``1.234.567``); fora desse
+    padrão, o ponto é decimal (``1.23``), preservando decimais internacionais.
+    """
+    if isinstance(value, numbers.Real) and not isinstance(value, bool):
+        number = float(value)
+        if number != number or number in (float("inf"), float("-inf")):
+            return None
+        return number
+
+    text = as_text(value).strip()
     if not text:
         return None
-    try:
+
+    negative = False
+    if text.startswith("(") and text.endswith(")"):
+        negative, text = True, text[1:-1].strip()
+    text = re.sub(r"(?i)r\$|\s", "", text)
+    if text.endswith("-"):
+        negative, text = True, text[:-1]
+    if text.startswith("-"):
+        negative, text = True, text[1:]
+    elif text.startswith("+"):
+        text = text[1:]
+    if not text:
+        return None
+
+    value: float | None = None
+    if re.fullmatch(r"\d+", text):
         value = float(text)
-    except ValueError:
-        value = parse_number(text, "br") if _BR_NUMBER.fullmatch(text) else None
-    if value is None or value != value or value in (float("inf"), float("-inf")):
+    elif "," in text and "." in text:
+        if text.rfind(",") > text.rfind("."):
+            if _BR_DECIMAL.fullmatch(text):
+                value = float(text.replace(".", "").replace(",", "."))
+        elif _INTL_GROUPED.fullmatch(text):
+            value = float(text.replace(",", ""))
+    elif "," in text:
+        if _BR_DECIMAL.fullmatch(text):
+            value = float(text.replace(",", "."))
+    elif "." in text:
+        if _BR_THOUSANDS.fullmatch(text):
+            value = float(text.replace(".", ""))
+        elif _INTL_DECIMAL.fullmatch(text):
+            value = float(text)
+    if value is None:
+        return None
+    if negative:
+        value = -value
+    if value != value or value in (float("inf"), float("-inf")):
         return None
     return value
 
 
 def same_value(a, b, tolerance: float = 0.0, ignore_case: bool = True) -> bool:
-    """Compara como texto normalizado; se ambos forem numéricos, usa a tolerância."""
+    """Compara como texto normalizado; se ambos forem numéricos, usa a tolerância.
+
+    Números seguem a convenção pt-BR: ``1.234`` é mil duzentos e trinta e
+    quatro, enquanto ``1.23`` é um vírgula vinte e três.
+    """
     ta, tb = as_text(a), as_text(b)
     if ignore_case:
         ta, tb = ta.casefold(), tb.casefold()
     if ta == tb:
         return True
-    na, nb = _numeric(ta), _numeric(tb)
+    na, nb = _numeric(a), _numeric(b)
     return na is not None and nb is not None and abs(na - nb) <= tolerance + 1e-9
 
 

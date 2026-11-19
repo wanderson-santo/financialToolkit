@@ -84,14 +84,14 @@ FT-001 → FT-002 → FT-005 → FT-003 → FT-004 → FT-006 → FT-007
 
 ### FT-002 — Corrigir comparação de inteiros com separador de milhar brasileiro
 
-- [ ] **FT-002 — Corrigir comparação de inteiros com separador de milhar brasileiro**
+- [x] **FT-002 — Corrigir comparação de inteiros com separador de milhar brasileiro**
   - **Descrição:** reconhecer `1.234`, `12.345`, `1.234.567` como inteiros brasileiros no comparador, sem confundir com decimais internacionais.
   - **Problema/necessidade:** AUD-14; `same_value("1.234","1234")` retorna `False`.
   - **Arquivos/componentes:** `modules/spreadsheets/comparator.py` (`_numeric`), `core/normalizers.py`, `tests/test_modules.py`.
   - **Prioridade:** P0 · **Complexidade:** pequena · **Dependências:** —
   - **Critérios de aceite:** casos brasileiros inequívocos são iguais; `1.23` e `1,23` mantêm semântica documentada; valores ambíguos não são convertidos silenciosamente; testes de regressão.
   - **Testes necessários:** `1.234` vs `1234`, `1.234,00` vs `1234`, `1.234.567`, `R$ 1.234`, negativos, decimais.
-  - **Status:** pendente
+  - **Status:** concluída
 
 ### FT-003 — Recuperar inicialização com banco inválido ou pasta indisponível
 

@@ -160,6 +160,32 @@ class ComparatorTests(TempDirCase):
         self.assertFalse(same_value("10.02", "10.00", tolerance=0.01))
         self.assertTrue(same_value(None, ""))
 
+    def test_numeros_brasileiros(self):
+        cases = [
+            ("1.234", "1234"),
+            ("12.345", "12345"),
+            ("1.234.567", "1234567"),
+            ("1.234,00", "1234"),
+            ("R$ 1.234", "1234"),
+            ("R$ 1.234,56", "1234.56"),
+            ("-1.234", "-1234"),
+            ("(1.234)", "-1234"),
+            ("1.234-", "-1234"),
+            ("1,23", "1.23"),
+            ("1.23", "1,23"),
+            ("1.2345", "1.2345"),
+        ]
+        for a, b in cases:
+            with self.subTest(a=a, b=b):
+                self.assertTrue(same_value(a, b))
+
+        # Valores numéricos não são reinterpretados como texto.
+        self.assertTrue(same_value(1.234, 1.234))
+        self.assertFalse(same_value(1.234, 1234))
+        # Formatos fora do padrão de milhar não são convertidos.
+        self.assertFalse(same_value("1.234", "1.2345"))
+        self.assertFalse(same_value("1.2.3", "123"))
+
     def test_tolerancia_formatos_inequivocos(self):
         cases = {
             "0": 0.0,
@@ -210,6 +236,20 @@ class ComparatorTests(TempDirCase):
         inp["tolerance"] = "0,50"
         kinds = [(d["Tipo"], d["Chave"], d["Coluna"]) for d in m.preview(inp, self.ctx).details]
         self.assertNotIn(("Alterado", "1", "Valor"), kinds)
+
+    def test_comparacao_inteiros_br(self):
+        a = pd.DataFrame({"CNPJ": ["1", "2", "3"], "Valor": ["1.234", "1.234.567", "R$ 1.234"]})
+        b = pd.DataFrame({"CNPJ": ["1", "2", "3"], "Valor": [1234, 1234567, 1235]})
+        fa, fb = self.tmp / "br_a.xlsx", self.tmp / "br_b.xlsx"
+        a.to_excel(fa, index=False)
+        b.to_excel(fb, index=False)
+        inp = {"file_a": str(fa), "file_b": str(fb), "keys": ["CNPJ"], "compare_cols": [],
+               "ignore_case": True, "tolerance": "0", "output_folder": ""}
+        kinds = [(d["Tipo"], d["Chave"], d["Coluna"])
+                 for d in SheetComparator().preview(inp, self.ctx).details]
+        self.assertNotIn(("Alterado", "1", "Valor"), kinds)
+        self.assertNotIn(("Alterado", "2", "Valor"), kinds)
+        self.assertIn(("Alterado", "3", "Valor"), kinds)
 
     def test_comparacao(self):
         a = pd.DataFrame({"CNPJ": ["1", "2", "3", "3"], "Nome": ["Ana", "Bia", "Caio", "Dup"], "Valor": [10, 20, 30, 1]})
