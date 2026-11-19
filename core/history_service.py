@@ -8,6 +8,18 @@ import json
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime
+from pathlib import Path
+
+from .exceptions import ToolkitError
+from .logging_service import get_logger
+
+_CORRUPTION_MARKERS = (
+    "file is not a database",
+    "database disk image is malformed",
+    "malformed database schema",
+    "file is encrypted or is not a database",
+    "database corruption",
+)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS executions (
@@ -34,6 +46,46 @@ def _now() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _is_corruption_error(exc: sqlite3.DatabaseError) -> bool:
+    message = str(exc).casefold()
+    return any(marker in message for marker in _CORRUPTION_MARKERS)
+
+
+def _corrupt_backup_path(path: Path) -> Path:
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    candidate = path.with_name(f"{path.name}.corrupt-{stamp}")
+    counter = 1
+    while candidate.exists():
+        candidate = path.with_name(f"{path.name}.corrupt-{stamp}-{counter}")
+        counter += 1
+    return candidate
+
+
+def _quarantine_database(path: Path) -> Path:
+    """Renomeia o banco inválido (e sidecars) sem apagar o conteúdo."""
+    backup = _corrupt_backup_path(path)
+    try:
+        path.rename(backup)
+    except OSError as exc:
+        raise ToolkitError(
+            "O banco de dados do histórico parece corrompido, mas não foi possível "
+            f"preservá-lo em {backup}. Verifique as permissões da pasta e tente novamente."
+        ) from exc
+
+    for suffix in ("-wal", "-shm"):
+        sidecar = Path(f"{path}{suffix}")
+        if sidecar.exists():
+            try:
+                sidecar.rename(Path(f"{backup}{suffix}"))
+            except OSError as exc:
+                get_logger().error("Não foi possível preservar o arquivo %s", sidecar, exc_info=True)
+                raise ToolkitError(
+                    f"O banco foi preservado em {backup}, mas não foi possível mover {sidecar}. "
+                    "Feche o aplicativo, mova ou renomeie esse arquivo manualmente e tente novamente."
+                ) from exc
+    return backup
+
+
 class HistoryService:
     def __init__(self, db_file):
         self.db_file = str(db_file)
@@ -41,6 +93,33 @@ class HistoryService:
             c.executescript(SCHEMA)
             # execuções que ficaram "em andamento" por fechamento abrupto do app
             c.execute("UPDATE executions SET status='interrupted' WHERE status='running'")
+
+    @classmethod
+    def open_with_recovery(cls, db_file, on_recover=None) -> "HistoryService":
+        """Abre o histórico e recupera apenas corrupção confirmada do SQLite.
+
+        O arquivo inválido é renomeado para ``<nome>.corrupt-<timestamp>``.
+        Erros de permissão, pasta ou bloqueio não são tratados como corrupção
+        e continuam sendo propagados para a inicialização exibir a mensagem
+        adequada.
+        """
+        path = Path(db_file)
+        try:
+            return cls(path)
+        except sqlite3.DatabaseError as exc:
+            if not _is_corruption_error(exc):
+                raise
+            backup = _quarantine_database(path)
+            logger = get_logger()
+            logger.error("Banco de dados corrompido preservado em %s: %s", backup, exc)
+            history = cls(path)
+            logger.info("Novo banco de dados criado em %s", path)
+            if on_recover is not None:
+                try:
+                    on_recover(backup, exc)
+                except Exception:  # noqa: BLE001 - falha de aviso não deve impedir o app
+                    logger.exception("Falha ao notificar a recuperação do banco")
+            return history
 
     @contextmanager
     def _conn(self):

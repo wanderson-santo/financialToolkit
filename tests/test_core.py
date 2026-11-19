@@ -1,3 +1,4 @@
+import sqlite3
 import unittest
 from datetime import date, datetime
 
@@ -91,6 +92,34 @@ class HistoryTests(TempDirCase):
 
         h2 = HistoryService(self.tmp / "t.db")  # reabrir marca "running" como interrompido
         self.assertEqual(h2.recent(1)[0]["status"], "interrupted")
+
+    def test_recupera_banco_corrompido(self):
+        db = self.tmp / "corrompido.db"
+        original = b"isto nao e um banco sqlite"
+        db.write_bytes(original)
+        recovered = []
+
+        with self.assertLogs("finance_toolkit", level="ERROR") as logs:
+            h = HistoryService.open_with_recovery(
+                db, on_recover=lambda backup, exc: recovered.append((backup, exc)),
+            )
+
+        backups = list(self.tmp.glob("corrompido.db.corrupt-*"))
+        self.assertEqual(len(backups), 1)
+        self.assertEqual(backups[0].read_bytes(), original)
+        self.assertTrue(db.exists())
+        self.assertEqual(recovered[0][0], backups[0])
+        self.assertIsInstance(recovered[0][1], sqlite3.DatabaseError)
+        self.assertIn("corrompido", logs.output[0].lower())
+
+        h.set_settings("m1", {"ok": True})
+        self.assertEqual(h.get_settings("m1"), {"ok": True})
+
+    def test_erro_de_pasta_nao_e_tratado_como_corrupcao(self):
+        db = self.tmp / "pasta_inexistente" / "t.db"
+        with self.assertRaises(sqlite3.DatabaseError):
+            HistoryService.open_with_recovery(db)
+        self.assertEqual(list(self.tmp.glob("**/*.corrupt-*")), [])
 
 
 if __name__ == "__main__":

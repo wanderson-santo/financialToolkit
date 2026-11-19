@@ -95,14 +95,14 @@ FT-001 → FT-002 → FT-005 → FT-003 → FT-004 → FT-006 → FT-007
 
 ### FT-003 — Recuperar inicialização com banco inválido ou pasta indisponível
 
-- [ ] **FT-003 — Recuperar inicialização com banco inválido ou pasta indisponível**
+- [x] **FT-003 — Recuperar inicialização com banco inválido ou pasta indisponível**
   - **Descrição:** tratar falhas de criação/abertura do SQLite e da pasta de dados com diálogo nativo, preservação do arquivo inválido e recriação segura; nunca encerrar silenciosamente no executável.
   - **Problema/necessidade:** AUD-03; `HistoryService` levanta `DatabaseError` e `console=False` esconde a falha.
   - **Arquivos/componentes:** `app/bootstrap.py`, `core/history_service.py`, `core/paths.py`, `core/logging_service.py`, `tests/test_core.py`.
   - **Prioridade:** P0 · **Complexidade:** média · **Dependências:** —
   - **Critérios de aceite:** banco inválido é renomeado para `.corrupt-<timestamp>` (não apagado), um banco novo é criado e o usuário é informado; falha de pasta mostra mensagem clara; log registra o ocorrido; teste com banco inválido.
   - **Testes necessários:** unidade de recuperação com arquivo inválido; teste de caminho não gravável (quando suportado no ambiente).
-  - **Status:** pendente
+  - **Status:** concluída
 
 ### FT-004 — Encerramento seguro durante execução
 
