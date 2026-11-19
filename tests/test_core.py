@@ -2,7 +2,7 @@ import sqlite3
 import unittest
 from datetime import date, datetime
 
-from core.base_module import Result
+from core.base_module import CANCELLED, INTERRUPTED, Result
 from core.history_service import HistoryService
 from core.normalizers import (
     as_text, clean_text, cnpj_is_valid, format_cnpj, is_blank, normalize_cnpj, parse_date, parse_number,
@@ -92,6 +92,31 @@ class HistoryTests(TempDirCase):
 
         h2 = HistoryService(self.tmp / "t.db")  # reabrir marca "running" como interrompido
         self.assertEqual(h2.recent(1)[0]["status"], "interrupted")
+
+    def test_finish_registra_cancelamento_e_interrupcao(self):
+        h = HistoryService(self.tmp / "t.db")
+
+        class M:
+            module_id, name, version = "m1", "Módulo 1", "1.0"
+
+        cancel_id = h.start(M, "execute", {})
+        h.finish(cancel_id, Result(status=CANCELLED, summary="Cancelado pelo usuário."), [])
+        interrupted_id = h.start(M, "preview", {})
+        h.finish(
+            interrupted_id,
+            Result(status=INTERRUPTED, summary="Aplicativo encerrado.", is_preview=True),
+            [("2026-01-01 10:00:00", "info", "interrompido")],
+        )
+
+        canc = h.get(cancel_id)
+        self.assertEqual(canc["status"], CANCELLED)
+        self.assertEqual(canc["summary"], "Cancelado pelo usuário.")
+        self.assertIsNotNone(canc["finished_at"])
+
+        inter = h.get(interrupted_id)
+        self.assertEqual(inter["status"], INTERRUPTED)
+        self.assertIsNotNone(inter["finished_at"])
+        self.assertEqual(h.events(interrupted_id)[0]["message"], "interrompido")
 
     def test_recupera_banco_corrompido(self):
         db = self.tmp / "corrompido.db"

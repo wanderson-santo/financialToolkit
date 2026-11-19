@@ -15,6 +15,7 @@ SUCCESS = "success"
 PARTIAL = "partial_success"
 FAILED = "failed"
 CANCELLED = "cancelled"
+INTERRUPTED = "interrupted"
 
 STATUS_LABELS = {
     SUCCESS: "Concluído",
@@ -22,7 +23,7 @@ STATUS_LABELS = {
     FAILED: "Falhou",
     CANCELLED: "Cancelado",
     "running": "Em andamento",
-    "interrupted": "Interrompido",
+    INTERRUPTED: "Interrompido",
 }
 
 

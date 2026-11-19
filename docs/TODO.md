@@ -106,14 +106,14 @@ FT-001 → FT-002 → FT-005 → FT-003 → FT-004 → FT-006 → FT-007
 
 ### FT-004 — Encerramento seguro durante execução
 
-- [ ] **FT-004 — Encerramento seguro durante execução**
+- [x] **FT-004 — Encerramento seguro durante execução**
   - **Descrição:** interceptar o fechamento da janela; se houver operação em andamento, confirmar, solicitar cancelamento, aguardar com timeout e registrar o resultado/interrupção antes de sair.
   - **Problema/necessidade:** AUD-04; thread `daemon` pode ser morta no meio de movimentação.
   - **Arquivos/componentes:** `app/main_window.py`, `app/pages.py`, `core/execution_context.py`, `core/history_service.py`.
   - **Prioridade:** P0 · **Complexidade:** média · **Dependências:** —
   - **Critérios de aceite:** fechar com operação ativa nunca termina sem confirmação; cancelamento é solicitado; histórico é finalizado como cancelado/interrompido; após timeout, usuário recebe aviso; teste com operação simulada.
   - **Testes necessários:** teste de controlador de fechamento sem UI real; teste de `finish` em cancelamento.
-  - **Status:** pendente
+  - **Status:** concluída
 
 ### FT-005 — Neutralizar fórmulas em exportações CSV e XLSX
 

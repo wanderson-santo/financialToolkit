@@ -12,14 +12,19 @@ from app import theme
 from app.services import Services
 from app.utils import open_path
 from app.widgets import ParamForm, ResultTable, ScrollFrame
-from core.base_module import CANCELLED, FAILED, PARTIAL, STATUS_LABELS, SUCCESS, BaseModule, Result
+from core.base_module import (
+    CANCELLED, FAILED, INTERRUPTED, PARTIAL, STATUS_LABELS, SUCCESS, BaseModule, Result,
+)
 from core.exceptions import CancelledError, ToolkitError
 from core.execution_context import ExecutionContext
 from core.export_service import export_rows
 from core.logging_service import get_logger
 
-STATUS_COLORS = {SUCCESS: theme.ACCENT, PARTIAL: theme.WARN, FAILED: theme.ERR, CANCELLED: theme.WARN}
-STATUS_ICONS = {SUCCESS: "✔", PARTIAL: "⚠", FAILED: "✘", CANCELLED: "⏹"}
+STATUS_COLORS = {
+    SUCCESS: theme.ACCENT, PARTIAL: theme.WARN, FAILED: theme.ERR,
+    CANCELLED: theme.WARN, INTERRUPTED: theme.WARN,
+}
+STATUS_ICONS = {SUCCESS: "✔", PARTIAL: "⚠", FAILED: "✘", CANCELLED: "⏹", INTERRUPTED: "⏸"}
 MODE_LABELS = {"execute": "Execução", "preview": "Pré-visualização"}
 
 
@@ -45,7 +50,9 @@ class ModulePage(ttk.Frame):
         self._events: list[tuple[str, str, str]] = []
         self._exec_id: int | None = None
         self._last_result: Result | None = None
+        self._mode = ""
         self._running = False
+        self._finished = True
         self._build()
         self.form.load(self.config.module_inputs(module.module_id))
 
@@ -130,6 +137,20 @@ class ModulePage(ttk.Frame):
         self.btn_run.configure(state=idle)
         self.btn_cancel.configure(state="normal" if running else "disabled")
 
+    @property
+    def is_running(self) -> bool:
+        return self._running
+
+    def request_cancel(self) -> None:
+        if self._running:
+            self._cancel_run()
+
+    def interrupt(self, reason: str) -> None:
+        """Finaliza o histórico quando o encerramento não pode esperar mais."""
+        if not self._running:
+            return
+        self._finish(Result(status=INTERRUPTED, summary=reason, is_preview=self._mode == "preview"))
+
     def _start(self, mode: str) -> None:
         if self._running:
             return
@@ -152,6 +173,8 @@ class ModulePage(ttk.Frame):
 
         self.config.save_module_inputs(self.module.module_id, values)
         self._cancel.clear()
+        self._mode = mode
+        self._finished = False
         self._events = []
         self._last_result = None
         self._exec_id = self.history.start(self.module, mode, values)
@@ -215,6 +238,9 @@ class ModulePage(ttk.Frame):
         self.log_text.configure(state="disabled")
 
     def _finish(self, result: Result) -> None:
+        if self._finished:
+            return
+        self._finished = True
         self._set_running(False)
         self._last_result = result
         if self._exec_id is not None:
@@ -223,8 +249,8 @@ class ModulePage(ttk.Frame):
         icon = STATUS_ICONS.get(result.status, "")
         self.summary_var.set(f"{icon} {prefix}{STATUS_LABELS.get(result.status, result.status)} — {result.summary}")
         self.summary_label.configure(foreground=STATUS_COLORS.get(result.status, theme.TEXT))
-        if result.status != FAILED:
-            self.bar["value"] = 100 if result.status != CANCELLED else self.bar["value"]
+        if result.status in (SUCCESS, PARTIAL):
+            self.bar["value"] = 100
         self.status_var.set("Concluído." if result.status in (SUCCESS, PARTIAL) else STATUS_LABELS.get(result.status, ""))
         self.table.set_rows(result.details)
         self._append_log("error" if result.status == FAILED else "info", result.summary)

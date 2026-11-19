@@ -8,6 +8,7 @@ from app import __version__, theme
 from app.module_registry import ModuleRegistry
 from app.pages import HistoryPage, HomePage, ModulePage, PlannedPage
 from app.services import Services
+from app.shutdown import DEFAULT_SHUTDOWN_TIMEOUT, shutdown_operations
 from core.logging_service import get_logger
 from core.normalizers import strip_accents
 
@@ -27,6 +28,8 @@ class MainWindow(tk.Tk):
 
         self._pages: dict[str, ttk.Frame] = {}
         self._current_key: str | None = None
+        self._closing = False
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
         self._build_sidebar()
         self.content = ttk.Frame(self)
         self.content.pack(side="left", fill="both", expand=True)
@@ -37,6 +40,49 @@ class MainWindow(tk.Tk):
     def report_callback_exception(self, exc, val, tb):  # noqa: D401
         get_logger().error("Erro inesperado na interface", exc_info=(exc, val, tb))
         messagebox.showerror("Erro inesperado", f"{val}\n\nO detalhe foi gravado no arquivo de log.")
+
+    # ---- encerramento seguro -------------------------------------------------------
+
+    def _active_operations(self) -> list[ModulePage]:
+        return [p for p in self._pages.values() if isinstance(p, ModulePage) and p.is_running]
+
+    def _pump_events(self) -> None:
+        try:
+            self.update()
+        except tk.TclError:
+            pass
+
+    def _confirm_close(self, count: int) -> bool:
+        return messagebox.askyesno(
+            "Operação em andamento",
+            f"{count} operação(ões) ainda está(ão) em andamento.\n\n"
+            "Fechar agora solicitará o cancelamento e aguardará até "
+            f"{DEFAULT_SHUTDOWN_TIMEOUT:.0f} segundos. Se não terminar, a operação "
+            "será registrada como interrompida.\n\nDeseja sair?",
+        )
+
+    def _warn_close_timeout(self, count: int) -> None:
+        messagebox.showwarning(
+            "Tempo esgotado",
+            f"{count} operação(ões) não terminaram após {DEFAULT_SHUTDOWN_TIMEOUT:.0f} segundos.\n\n"
+            "O histórico foi registrado como interrompido e o aplicativo será fechado.",
+        )
+
+    def _on_close(self) -> None:
+        if self._closing:
+            return
+        self._closing = True
+        try:
+            result = shutdown_operations(
+                self._active_operations(),
+                confirm=self._confirm_close,
+                warn=self._warn_close_timeout,
+                pump=self._pump_events,
+            )
+        finally:
+            self._closing = False
+        if result.confirmed:
+            self.destroy()
 
     # ---- menu lateral ---------------------------------------------------------------
 
