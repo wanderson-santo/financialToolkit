@@ -117,14 +117,14 @@ FT-001 → FT-002 → FT-005 → FT-003 → FT-004 → FT-006 → FT-007
 
 ### FT-005 — Neutralizar fórmulas em exportações CSV e XLSX
 
-- [ ] **FT-005 — Neutralizar fórmulas em exportações CSV e XLSX**
+- [x] **FT-005 — Neutralizar fórmulas em exportações CSV e XLSX**
   - **Descrição:** aplicar uma política única de sanitização a todas as saídas tabulares, cobrindo `=`, `+`, `-`, `@`, tab/CR e espaços à esquerda.
   - **Problema/necessidade:** AUD-19; CSV permite injeção de fórmula; XLSX protege apenas `=`.
   - **Arquivos/componentes:** `core/export_service.py`, `app/pages.py` (exportação), `tests/test_core.py` ou novo `tests/test_export.py`.
   - **Prioridade:** P0 · **Complexidade:** pequena · **Dependências:** —
   - **Critérios de aceite:** payloads conhecidos são exportados como texto e não como fórmula em CSV/XLSX; números negativos legítimos continuam números; regra documentada; testes de ambos os formatos.
   - **Testes necessários:** casos `=`, `+`, `-`, `@`, tab, CR, espaços; garantir que valores numéricos não sejam corrompidos.
-  - **Status:** pendente
+  - **Status:** concluída
 
 ### FT-006 — Deduplicar cabeçalhos de planilha na leitura
 

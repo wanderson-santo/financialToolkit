@@ -8,22 +8,55 @@ from pathlib import Path
 import pandas as pd
 from openpyxl.utils import get_column_letter
 
+from .normalizers import parse_number
+
 NUMBER_FORMAT = "#,##0.00"
+
+_INVISIBLE_START = "\ufeff\u200b\u200c\u200d\u2060\u00ad"
+
+
+def _is_numeric_text(text: str) -> bool:
+    """True se o texto inteiro representa um número (inclusive negativo)."""
+    return parse_number(text, "br") is not None or parse_number(text, "intl") is not None
+
+
+def _is_dangerous(text: str) -> bool:
+    """Detecta conteúdo que pode ser interpretado como fórmula por planilhas.
+
+    A verificação ignora espaços à esquerda, mas preserva o valor original.
+    Números legítimos iniciados por ``+`` ou ``-`` não são tratados como
+    fórmulas.
+    """
+    if text and (ord(text[0]) < 32 or text[0] in _INVISIBLE_START):
+        return True
+    stripped = text.lstrip()
+    while stripped and (ord(stripped[0]) < 32 or stripped[0] in _INVISIBLE_START):
+        stripped = stripped[1:].lstrip()
+    if not stripped:
+        return False
+    first = stripped[0]
+    if first in ("=", "@"):
+        return True
+    if first in ("+", "-"):
+        return not _is_numeric_text(stripped)
+    return False
 
 
 def _guard(value):
-    # openpyxl grava texto iniciado por "=" como fórmula; neutraliza.
-    if isinstance(value, str) and value.startswith("="):
+    """Prefixa apóstrofo em textos perigosos para que sejam exportados como texto."""
+    if isinstance(value, str) and _is_dangerous(value):
         return "'" + value
     return value
 
 
 def _protect(df: pd.DataFrame) -> pd.DataFrame:
+    """Sanitiza valores e cabeçalhos antes de qualquer exportação tabular."""
     out = df.copy()
-    for col in out.columns:
-        s = out[col]
+    out.columns = [_guard(col) for col in out.columns]
+    for idx in range(out.shape[1]):
+        s = out.iloc[:, idx]
         if s.dtype == object or pd.api.types.is_string_dtype(s):
-            out[col] = s.map(_guard)
+            out.isetitem(idx, s.map(_guard))
     return out
 
 
@@ -33,7 +66,12 @@ def export_sheets(
     number_columns: dict[str, list[str]] | None = None,
     date_format: str = "DD/MM/YYYY",
 ) -> Path:
-    """Grava um XLSX com cabeçalho congelado e largura de coluna ajustada."""
+    """Grava um XLSX com cabeçalho congelado e largura de coluna ajustada.
+
+    Toda célula textual passa por :func:`_protect`: conteúdo que poderia ser
+    interpretado como fórmula recebe um apóstrofo inicial. Números nativos não
+    são alterados.
+    """
     path = Path(path)
     number_columns = number_columns or {}
     with pd.ExcelWriter(
@@ -41,13 +79,15 @@ def export_sheets(
     ) as writer:
         for name, df in sheets.items():
             sheet_name = re.sub(r"[\[\]:*?/\\]", "-", name)[:31] or "Planilha"
+            original_columns = list(df.columns)
             df = _protect(df)
             df.to_excel(writer, sheet_name=sheet_name, index=False)
             ws = writer.sheets[sheet_name]
             ws.freeze_panes = "A2"
             columns = list(df.columns)
             for idx, col in enumerate(columns, start=1):
-                sample = [len(str(col))] + [len(str(x)) for x in df[col].head(200).tolist()]
+                values = df.iloc[:, idx - 1].head(200).tolist()
+                sample = [len(str(col))] + [len(str(x)) for x in values]
                 ws.column_dimensions[get_column_letter(idx)].width = min(max(sample) + 2, 60)
             for idx in range(1, len(columns) + 1):  # datas: formato dd/mm/aaaa nas células de data
                 for row in range(2, ws.max_row + 1):
@@ -55,17 +95,26 @@ def export_sheets(
                     if isinstance(cell.value, (date, datetime)):
                         cell.number_format = date_format
             for col in number_columns.get(name, []):
-                if col in columns:
+                if col in original_columns:
+                    idx = original_columns.index(col) + 1
+                elif col in columns:
                     idx = columns.index(col) + 1
-                    for row in range(2, ws.max_row + 1):
-                        ws.cell(row=row, column=idx).number_format = NUMBER_FORMAT
+                else:
+                    continue
+                for row in range(2, ws.max_row + 1):
+                    ws.cell(row=row, column=idx).number_format = NUMBER_FORMAT
     return path
 
 
 def export_rows(rows: list[dict], path) -> Path:
-    """Exporta uma lista de dicionários para .xlsx ou .csv (conforme a extensão)."""
+    """Exporta uma lista de dicionários para .xlsx ou .csv (conforme a extensão).
+
+    A mesma política de sanitização é aplicada aos dois formatos; no CSV, o
+    apóstrofo inicial é o que impede a planilha de interpretar a célula como
+    fórmula.
+    """
     path = Path(path)
-    df = pd.DataFrame(rows)
+    df = _protect(pd.DataFrame(rows))
     if path.suffix.lower() == ".csv":
         df.to_csv(path, sep=";", index=False, encoding="utf-8-sig")
         return path
