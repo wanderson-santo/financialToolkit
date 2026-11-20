@@ -227,14 +227,14 @@ FT-001 → FT-002 → FT-005 → FT-003 → FT-004 → FT-006 → FT-007
 
 ### FT-015 — Adotar controle de versão e higiene de repositório
 
-- [ ] **FT-015 — Adotar controle de versão e higiene de repositório**
+- [x] **FT-015 — Adotar controle de versão e higiene de repositório**
   - **Descrição:** inicializar Git (ou integrar a repositório existente), revisar `.gitignore`, criar política simples de branches/tags e registrar a versão 0.1.0 como baseline.
   - **Problema/necessidade:** AUD-01; não há histórico nem rollback.
   - **Arquivos/componentes:** raiz do projeto, `.gitignore`, documentação de contribuição/release.
   - **Prioridade:** P0 (processo) · **Complexidade:** pequena · **Dependências:** —
   - **Critérios de aceite:** repositório versionado; `docs/` e código rastreáveis; nenhum artefato de build/venv versionado; tag `v0.1.0`; checklist de commit/release documentado.
   - **Testes necessários:** não se aplica; verificar clone limpo e `git status` limpo.
-  - **Status:** pendente
+  - **Status:** concluída
 
 ---
 

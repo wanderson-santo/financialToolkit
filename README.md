@@ -123,6 +123,12 @@ histórico e a exportação já funcionam sem mexer na interface.
 - Tabelas na tela mostram até 1.000 linhas; o export traz tudo.
 - Alguns antivírus marcam executáveis do PyInstaller como suspeitos (falso positivo).
 
+## Versionamento e release
+
+O projeto usa Git com `main` estável, commits por tarefa e tags SemVer. O
+checklist de commit/release está em [`docs/versioning.md`](docs/versioning.md).
+A baseline atual é a tag `v0.1.0`.
+
 ## Roadmap (do documento de arquitetura)
 
 - **Fase 1** — Histórico ampliado (filtros, exportação), serviços restantes.
