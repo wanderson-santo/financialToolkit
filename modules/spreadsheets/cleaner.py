@@ -15,25 +15,17 @@ from core.file_service import resolve_output_dir, unique_path
 from core.normalizers import (
     clean_text, format_cnpj, is_blank, normalize_cnpj, parse_date, parse_number,
 )
-from core.spreadsheet_service import SHEET_FILETYPES, read_table
+from core.spreadsheet_service import SHEET_FILETYPES, read_table, unique_headers
 
 FMT_BR = "Brasileiro (1.234,56)"
 FMT_INTL = "Internacional (1,234.56)"
 
 
-def _dedupe(names: list[str]) -> list[str]:
-    seen: dict[str, int] = {}
-    out = []
-    for n in names:
-        base = n or "Coluna"
-        seen[base] = seen.get(base, 0) + 1
-        out.append(base if seen[base] == 1 else f"{base}_{seen[base]}")
-    return out
-
-
 def clean_table(df: pd.DataFrame, opts: dict) -> tuple[pd.DataFrame, list[dict], int, list[str]]:
     """Aplica as limpezas pedidas. Devolve (df, estatísticas, avisos, colunas numéricas)."""
-    data = {str(c): df[c].tolist() for c in df.columns}
+    # Acesso posicional: funciona mesmo se o DataFrame trouxer rótulos repetidos.
+    headers = unique_headers(df.columns)
+    data = {name: df.iloc[:, i].tolist() for i, name in enumerate(headers)}
     stats: list[dict] = []
     warnings = 0
     rows_in, cols_in = len(df), len(df.columns)
@@ -123,7 +115,7 @@ def clean_table(df: pd.DataFrame, opts: dict) -> tuple[pd.DataFrame, list[dict],
 
     if opts["normalize_headers"]:
         old_names = list(data)
-        new_names = _dedupe([clean_text(n) for n in old_names])
+        new_names = unique_headers([clean_text(n) for n in old_names])
         renamed = {o: n for o, n in zip(old_names, new_names)}
         note("Cabeçalhos padronizados", "(cabeçalho)", sum(o != n for o, n in renamed.items()))
         data = {renamed[c]: v for c, v in data.items()}

@@ -128,14 +128,14 @@ FT-001 → FT-002 → FT-005 → FT-003 → FT-004 → FT-006 → FT-007
 
 ### FT-006 — Deduplicar cabeçalhos de planilha na leitura
 
-- [ ] **FT-006 — Deduplicar cabeçalhos de planilha na leitura**
+- [x] **FT-006 — Deduplicar cabeçalhos de planilha na leitura**
   - **Descrição:** garantir nomes de coluna únicos e determinísticos após `strip`/normalização, preservando a ordem e avisando sobre renomeações.
   - **Problema/necessidade:** AUD-15; `"X"` e `" X "` quebram o limpador e podem perder colunas no comparador.
   - **Arquivos/componentes:** `core/spreadsheet_service.py` (`read_table`), `modules/spreadsheets/cleaner.py`, `modules/spreadsheets/comparator.py`, testes.
   - **Prioridade:** P0 · **Complexidade:** média · **Dependências:** —
   - **Critérios de aceite:** cabeçalhos duplicados viram `X`, `X_2`, …; nenhuma coluna é perdida; a renomeação é registrada/logada; limpador e comparador funcionam com o caso; testes.
   - **Testes necessários:** xlsx/csv com `X`/` X `/vazio/duplicado; verificar todas as colunas no resultado.
-  - **Status:** pendente
+  - **Status:** concluída
 
 ### FT-007 — Tornar a detecção de codificação/separador CSV confiável
 

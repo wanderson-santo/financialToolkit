@@ -110,6 +110,16 @@ class CompanyFoldersTests(TempDirCase):
 
 
 class CleanerTests(TempDirCase):
+    def test_limpeza_com_cabecalhos_repetidos(self):
+        path = self.write("dup.csv", "X; X ;;Y\n1;2;3;4\n")
+        inp = {"spreadsheet": str(path), "sheet": "", "remove_empty": True, "clean_text": True,
+               "normalize_headers": False, "cnpj_cols": [], "date_cols": [], "value_cols": [],
+               "number_format": "Brasileiro (1.234,56)", "output_folder": ""}
+        r = SheetCleaner().execute(inp, self.ctx)
+        ws = load_workbook(r.output_files[0]).active
+        self.assertEqual([c.value for c in ws[1]], ["X", "X_2", "Coluna", "Y"])
+        self.assertEqual([c.value for c in ws[2]], ["1", "2", "3", "4"])
+
     def test_limpeza_completa(self):
         df = pd.DataFrame({
             " CNPJ ": [11222333000181, "11.222.333/0001-81 ", "invalido", None, None],
@@ -273,6 +283,22 @@ class ComparatorTests(TempDirCase):
         wb = load_workbook(r.output_files[0])
         self.assertEqual(wb.sheetnames, ["Resumo", "Incluídos", "Removidos", "Alterados", "Avisos"])
         self.assertEqual(wb["Alterados"].max_row, 3)
+
+    def test_comparacao_com_cabecalhos_repetidos(self):
+        fa = self.write("dup_a.csv", "CNPJ;Valor; Valor\n1;10;100\n")
+        fb = self.write("dup_b.csv", "CNPJ;Valor; Valor\n1;10;200\n")
+        inp = {"file_a": str(fa), "file_b": str(fb), "keys": ["CNPJ"], "compare_cols": [],
+               "ignore_case": True, "tolerance": "0", "output_folder": ""}
+        m = SheetComparator()
+        r = m.preview(inp, self.ctx)
+        kinds = [(d["Tipo"], d["Chave"], d["Coluna"]) for d in r.details]
+        self.assertIn(("Alterado", "1", "Valor_2"), kinds)
+        self.assertNotIn(("Alterado", "1", "Valor"), kinds)
+        self.assertEqual(r.warnings, 0)
+
+        r = m.execute(inp, self.ctx)
+        wb = load_workbook(r.output_files[0])
+        self.assertEqual(wb["Alterados"].max_row, 2)  # cabeçalho + a célula alterada
 
     def test_chave_ausente(self):
         fa = self.tmp / "a.xlsx"
