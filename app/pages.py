@@ -19,6 +19,7 @@ from core.exceptions import CancelledError, ToolkitError
 from core.execution_context import ExecutionContext
 from core.export_service import export_rows
 from core.logging_service import get_logger
+from core.operation_coordinator import OperationBusyError
 
 STATUS_COLORS = {
     SUCCESS: theme.ACCENT, PARTIAL: theme.WARN, FAILED: theme.ERR,
@@ -45,6 +46,8 @@ class ModulePage(ttk.Frame):
         self.module = module
         self.history = services.history
         self.config = services.config
+        self.coordinator = services.coordinator
+        self._holds_operation = False
         self._queue: queue.Queue = queue.Queue()
         self._cancel = threading.Event()
         self._events: list[tuple[str, str, str]] = []
@@ -141,6 +144,11 @@ class ModulePage(ttk.Frame):
     def is_running(self) -> bool:
         return self._running
 
+    def _release_operation(self) -> None:
+        if self._holds_operation:
+            self._holds_operation = False
+            self.coordinator.release(self.module.module_id)
+
     def request_cancel(self) -> None:
         if self._running:
             self._cancel_run()
@@ -171,25 +179,37 @@ class ModulePage(ttk.Frame):
                     "Você já conferiu a pré-visualização?\n\nDeseja continuar?"):
                 return
 
-        self.config.save_module_inputs(self.module.module_id, values)
-        self._cancel.clear()
-        self._mode = mode
-        self._finished = False
-        self._events = []
-        self._last_result = None
-        self._exec_id = self.history.start(self.module, mode, values)
-        self.table.clear()
-        self.summary_var.set("")
-        self.bar["value"] = 0
-        self.status_var.set("Iniciando…")
-        self.log_text.configure(state="normal")
-        self.log_text.delete("1.0", "end")
-        self.log_text.configure(state="disabled")
-        self.btn_export.configure(state="disabled")
-        self.btn_open.configure(state="disabled")
-        self._append_log("info", f"{MODE_LABELS[mode]} iniciada.")
-        self._set_running(True)
-        threading.Thread(target=self._work, args=(mode, values), daemon=True).start()
+        if mode == "execute":
+            try:
+                self.coordinator.acquire(self.module.module_id, self.module.name)
+            except OperationBusyError as exc:
+                messagebox.showwarning("Operação em andamento", str(exc))
+                return
+            self._holds_operation = True
+
+        try:
+            self.config.save_module_inputs(self.module.module_id, values)
+            self._cancel.clear()
+            self._mode = mode
+            self._finished = False
+            self._events = []
+            self._last_result = None
+            self._exec_id = self.history.start(self.module, mode, values)
+            self.table.clear()
+            self.summary_var.set("")
+            self.bar["value"] = 0
+            self.status_var.set("Iniciando…")
+            self.log_text.configure(state="normal")
+            self.log_text.delete("1.0", "end")
+            self.log_text.configure(state="disabled")
+            self.btn_export.configure(state="disabled")
+            self.btn_open.configure(state="disabled")
+            self._append_log("info", f"{MODE_LABELS[mode]} iniciada.")
+            self._set_running(True)
+            threading.Thread(target=self._work, args=(mode, values), daemon=True).start()
+        except Exception:
+            self._release_operation()
+            raise
         self.after(80, self._poll)
 
     def _work(self, mode: str, values: dict) -> None:
@@ -241,6 +261,7 @@ class ModulePage(ttk.Frame):
         if self._finished:
             return
         self._finished = True
+        self._release_operation()
         self._set_running(False)
         self._last_result = result
         if self._exec_id is not None:

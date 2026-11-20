@@ -110,6 +110,7 @@ histórico e a exportação já funcionam sem mexer na interface.
 ## Segurança operacional
 
 - Arquivos originais nunca são sobrescritos; saídas ganham `_1`, `_2`… se o nome já existe.
+- Apenas uma execução que altera arquivos roda por vez; pré-visualizações (somente leitura) podem rodar em paralelo.
 - Operações que movem arquivos pedem confirmação e podem ser pré-visualizadas antes.
 - Duplicatas vão para quarentena com manifesto CSV, nunca são excluídas.
 - Os logs registram caminhos e contagens, não o conteúdo das células.

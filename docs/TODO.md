@@ -194,14 +194,14 @@ FT-001 → FT-002 → FT-005 → FT-003 → FT-004 → FT-006 → FT-007
 
 ### FT-012 — Coordenar operações mutáveis simultâneas
 
-- [ ] **FT-012 — Coordenar operações mutáveis simultâneas**
+- [x] **FT-012 — Coordenar operações mutáveis simultâneas**
   - **Descrição:** introduzir um coordenador que permita apenas uma operação que altera arquivos por vez (ou fila), com estado global consultável.
   - **Problema/necessidade:** AUD-05; duas páginas podem operar na mesma pasta.
   - **Arquivos/componentes:** novo serviço em `core/` (ex.: `operation_coordinator.py`), `app/services.py`, `app/pages.py`, testes.
   - **Prioridade:** P1 · **Complexidade:** média · **Dependências:** —
   - **Critérios de aceite:** segunda operação mutável é bloqueada/enfileirada com mensagem; preview pode ser permitido conforme política; estado é liberado em sucesso/erro/cancelamento; testes.
   - **Testes necessários:** duas aquisições concorrentes; liberação em exceção; cancelamento.
-  - **Status:** pendente
+  - **Status:** concluída
 
 ### FT-013 — Correlacionar `run_id` entre log e histórico
 
