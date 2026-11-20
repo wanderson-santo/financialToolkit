@@ -36,6 +36,19 @@ MIGRATIONS: dict[int, tuple[str, ...]] = {
         """,
         "CREATE TABLE IF NOT EXISTS favorites (module_id TEXT PRIMARY KEY)",
     ),
+    2: (
+        "ALTER TABLE executions ADD COLUMN details_file TEXT",
+        "ALTER TABLE executions ADD COLUMN details_count INTEGER DEFAULT 0",
+        """
+        CREATE TABLE IF NOT EXISTS execution_details (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            execution_id INTEGER NOT NULL,
+            seq INTEGER NOT NULL,
+            data_json TEXT NOT NULL
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_details_exec ON execution_details(execution_id, seq)",
+    ),
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)

@@ -45,10 +45,14 @@ class MigrationTests(TempDirCase):
             row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
         }
         self.assertTrue({"executions", "execution_events", "module_settings", "favorites"} <= names)
+        self.assertIn("execution_details", names)
         indexes = {
             row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='index'")
         }
         self.assertIn("idx_events_exec", indexes)
+        self.assertIn("idx_details_exec", indexes)
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(executions)")}
+        self.assertTrue({"details_file", "details_count"} <= columns)
 
     def test_banco_antigo_migra_sem_perder_dados(self):
         path = self.tmp / "antigo.db"
@@ -78,6 +82,29 @@ class MigrationTests(TempDirCase):
         self.assertEqual(history.events(exec_id)[0]["message"], "evento antigo")
         self.assertEqual(history.get_settings("m1"), {"x": "y"})
         self.assertEqual(history.favorites(), ["m1"])
+        self.assertEqual(get_version(conn), SCHEMA_VERSION)
+
+    def test_banco_v1_migra_para_v2(self):
+        path = self.tmp / "v1.db"
+        conn = self._connect(path)
+        conn.executescript(LEGACY_SCHEMA)
+        conn.execute("PRAGMA user_version = 1")
+        cur = conn.execute(
+            "INSERT INTO executions (module_id, module_name, module_version, mode, started_at,"
+            " status, summary) VALUES ('m1', 'Módulo 1', '1.0', 'execute',"
+            " '2026-01-01 10:00:00', 'success', 'execução v1')"
+        )
+        exec_id = int(cur.lastrowid)
+        conn.commit()
+        self.assertEqual(get_version(conn), 1)
+
+        history = HistoryService(path)
+
+        row = history.get(exec_id)
+        self.assertEqual(row["summary"], "execução v1")
+        self.assertIsNone(row["details_file"])
+        self.assertEqual(row["details_count"], 0)
+        self.assertEqual(history.details(exec_id), [])
         self.assertEqual(get_version(conn), SCHEMA_VERSION)
 
     def test_migracao_e_idempotente(self):

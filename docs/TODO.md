@@ -2,7 +2,8 @@
 
 > **Etapa:** 6 — construção do backlog  
 > **Fonte:** `docs/project-discovery.md`, `docs/technical-audit.md`, `docs/improvement-roadmap.md`  
-> **Status geral:** planejamento. Nenhuma tarefa foi implementada.  
+> **Status geral:** em implementação — FT-001 a FT-017 concluídas.
+>
 > **Regra de IDs:** os IDs `FT-xxx` são permanentes. Reordene, divida ou adie tarefas, mas não reutilize nem renumere IDs.
 
 ---
@@ -63,9 +64,9 @@ FT-001 → FT-002 → FT-005 → FT-003 → FT-004 → FT-006 → FT-007
    → FT-024 → FT-032 → FT-033 → FT-038 → FT-074
 ```
 
-### Primeira tarefa recomendada
+### Próxima tarefa recomendada
 
-**FT-001 — Corrigir a interpretação de tolerância no comparador.** É pequena, isolada, tem impacto financeiro direto, teste objetivo e não depende de nenhuma decisão arquitetural. Em seguida, FT-002, FT-005, FT-003 e FT-004 fecham o bloco de confiança.
+**FT-018 — Ativar WAL, índices, retenção e backup do banco.** Fecha a integridade do histórico com os detalhes já persistidos: WAL para concorrência, índices para consulta, retenção configurável e backup antes de migrações.
 
 ---
 
@@ -253,14 +254,14 @@ FT-001 → FT-002 → FT-005 → FT-003 → FT-004 → FT-006 → FT-007
 
 ### FT-017 — Persistir detalhes e artefatos das execuções
 
-- [ ] **FT-017 — Persistir detalhes e artefatos das execuções**
+- [x] **FT-017 — Persistir detalhes e artefatos das execuções**
   - **Descrição:** armazenar os detalhes por linha/arquivo de forma consultável, com limite e referência a arquivo externo quando grande.
   - **Problema/necessidade:** AUD-07; fechar o app apaga a evidência operacional.
   - **Arquivos/componentes:** `core/history_service.py`, `app/pages.py`, `core/base_module.py`, migração FT-016, testes.
   - **Prioridade:** P1 · **Complexidade:** média · **Dependências:** FT-016
   - **Critérios de aceite:** execução antiga exibe detalhes; exportação funciona; detalhes grandes não travam a UI; tamanho/retenção definidos; teste de ida e volta.
   - **Testes necessários:** persistência/consulta de 0, poucas e muitas linhas; caracteres especiais; falha de escrita.
-  - **Status:** pendente
+  - **Status:** concluída
 
 ### FT-018 — Ativar WAL, índices, retenção e backup do banco
 

@@ -135,7 +135,7 @@
 
 ## ADR-015 — Persistir detalhes de execução com retenção
 
-- **Status:** proposta
+- **Status:** aceita (implementada na FT-017; retenção configurável fica para a FT-018)
 - **Contexto:** detalhes por linha não são gravados; histórico perde valor de auditoria.
 - **Decisão:** armazenar detalhes em tabela/arquivo referenciado, com limite e retenção configurável; exportação e consulta pela UI.
 - **Justificativa:** rastreabilidade, suporte, undo e relatórios.

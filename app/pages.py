@@ -27,6 +27,7 @@ STATUS_COLORS = {
 }
 STATUS_ICONS = {SUCCESS: "✔", PARTIAL: "⚠", FAILED: "✘", CANCELLED: "⏹", INTERRUPTED: "⏸"}
 MODE_LABELS = {"execute": "Execução", "preview": "Pré-visualização"}
+DETAILS_PREVIEW = 200
 
 
 def _short_date(ts: str | None) -> str:
@@ -441,11 +442,16 @@ class HistoryPage(ttk.Frame):
             return
         win = tk.Toplevel(self)
         win.title(f"Execução #{row['id']} — {row['module_name']}")
-        win.geometry("780x560")
+        win.geometry("900x620")
         win.configure(bg=theme.BG)
-        text = scrolledtext.ScrolledText(win, font=theme.MONO, bg=theme.FIELD, fg=theme.TEXT, relief="flat",
-                                         padx=10, pady=8, wrap="word")
-        text.pack(fill="both", expand=True, padx=12, pady=12)
+        notebook = ttk.Notebook(win)
+        notebook.pack(fill="both", expand=True, padx=12, pady=12)
+
+        summary_tab = ttk.Frame(notebook)
+        notebook.add(summary_tab, text="Resumo")
+        text = scrolledtext.ScrolledText(summary_tab, font=theme.MONO, bg=theme.FIELD, fg=theme.TEXT,
+                                         relief="flat", padx=10, pady=8, wrap="word")
+        text.pack(fill="both", expand=True)
         try:
             params = json.dumps(json.loads(row["params_json"] or "{}"), ensure_ascii=False, indent=2)
         except json.JSONDecodeError:
@@ -464,6 +470,51 @@ class HistoryPage(ttk.Frame):
         ]
         text.insert("1.0", "\n".join(lines))
         text.configure(state="disabled")
+
+        details_tab = ttk.Frame(notebook, padding=8)
+        notebook.add(details_tab, text="Detalhes")
+        details = self.history.details(row["id"], limit=DETAILS_PREVIEW)
+        total = int(row["details_count"] or 0) or len(details)
+        table = ResultTable(details_tab)
+        table.pack(fill="both", expand=True)
+        table.set_rows(details)
+        if total and not details:
+            table.note.configure(
+                text="Os detalhes foram registrados, mas não puderam ser lidos. "
+                     "Verifique a pasta de dados."
+            )
+        elif total > len(details):
+            table.note.configure(
+                text=f"Mostrando {len(details)} de {total} linhas. "
+                     "Use “Exportar detalhes” para ver tudo."
+            )
+        elif not total:
+            table.note.configure(text="Esta execução não tem detalhes por linha/arquivo.")
+        footer = ttk.Frame(details_tab)
+        footer.pack(fill="x", pady=(8, 0))
+        ttk.Label(footer, text=f"{total} linha(s) registrada(s)." if total else "",
+                  style="Muted.TLabel").pack(side="left")
+        ttk.Button(footer, text="Exportar detalhes…", command=lambda: self._export_details(row["id"]),
+                   state="normal" if total else "disabled").pack(side="right")
+
+    def _export_details(self, exec_id: int) -> None:
+        rows = self.history.all_details(exec_id)
+        if not rows:
+            messagebox.showinfo("Exportar detalhes", "Esta execução não tem detalhes para exportar.",
+                                parent=self)
+            return
+        path = filedialog.asksaveasfilename(
+            parent=self, title="Exportar detalhes", defaultextension=".xlsx",
+            initialfile=f"detalhes-{exec_id}.xlsx",
+            filetypes=[("Excel", "*.xlsx"), ("CSV", "*.csv")])
+        if not path:
+            return
+        try:
+            export_rows(rows, path)
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror("Erro ao exportar", str(exc), parent=self)
+            return
+        messagebox.showinfo("Exportado", f"Detalhes salvos em:\n{path}", parent=self)
 
 
 # ---------------------------------------------------------------------------

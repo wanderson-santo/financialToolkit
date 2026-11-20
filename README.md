@@ -118,6 +118,8 @@ histórico e a exportação já funcionam sem mexer na interface.
 - Operações que movem arquivos pedem confirmação e podem ser pré-visualizadas antes.
 - Duplicatas vão para quarentena com manifesto CSV, nunca são excluídas.
 - Cada execução recebe um ID curto, registrado no histórico e nas linhas de log (permite correlacionar suporte e auditoria).
+- Os detalhes por linha/arquivo são salvos com o histórico: até 1.000 linhas no banco; acima disso, um arquivo JSONL por execução em `%APPDATA%\FinanceToolkit\details`. O histórico mostra uma prévia de 200 linhas e exporta o conjunto completo, com teto de 50.000 linhas por execução.
+- Diferentemente dos logs, os detalhes podem conter conteúdo das planilhas e ficam na pasta de dados do usuário.
 - Os logs registram caminhos e contagens, não o conteúdo das células.
 - O histórico local **não** é uma trilha de auditoria inviolável (qualquer pessoa com acesso à
   pasta de dados pode editá-lo).
@@ -126,7 +128,7 @@ histórico e a exportação já funcionam sem mexer na interface.
 
 - Ler `.xls` (formato antigo) exige a biblioteca `xlrd` (já em `requirements.txt`).
 - O CNPJ alfanumérico segue a regra de dígito verificador (módulo 11, letras = código ASCII − 48).
-- Tabelas na tela mostram até 1.000 linhas; o export traz tudo.
+- Tabelas na tela mostram até 1.000 linhas; o histórico mostra uma prévia de 200 detalhes e o export traz tudo.
 - Alguns antivírus marcam executáveis do PyInstaller como suspeitos (falso positivo).
 
 ## Versionamento e release

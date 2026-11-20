@@ -34,5 +34,10 @@ def backups_dir() -> Path:
     return _sub("backups")
 
 
+def details_dir() -> Path:
+    """Detalhes grandes de execuções, um arquivo JSONL por execução."""
+    return _sub("details")
+
+
 def db_path() -> Path:
     return app_data_dir() / "finance_toolkit.db"
