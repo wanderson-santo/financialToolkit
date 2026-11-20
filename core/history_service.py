@@ -1,24 +1,27 @@
 """Histórico de execuções, configurações por módulo e favoritos (SQLite local).
 
-Guarda metadados e parâmetros — nunca cópias de planilhas ou documentos.
+Guarda metadados e parâmetros. Os detalhes persistidos podem conter dados das
+planilhas processadas, mas o aplicativo nunca guarda cópias dos arquivos.
 """
 from __future__ import annotations
 
 import json
 import os
+import re
+import shutil
 import sqlite3
 import tempfile
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from .base_module import (
     CANCELLED, FAILED, INTERRUPTED, PARTIAL, RUNNING, SUCCESS,
 )
-from .db_migrations import apply_migrations
+from .db_migrations import SCHEMA_VERSION, apply_migrations, get_version
 from .exceptions import ToolkitError
 from .logging_service import get_logger
-from .paths import details_dir
+from .paths import backups_dir, details_dir
 
 _CORRUPTION_MARKERS = (
     "file is not a database",
@@ -32,6 +35,14 @@ _CORRUPTION_MARKERS = (
 DETAILS_INLINE_LIMIT = 1000
 # Teto por execução: evita crescimento sem limite e mantém a exportação ágil.
 DETAILS_MAX_ROWS = 50_000
+# Política padrão de retenção do histórico.
+DEFAULT_RETENTION_DAYS = 365
+DEFAULT_RETENTION_KEEP = 5000
+
+
+def _chunks(values: list[int], size: int = 900):
+    for start in range(0, len(values), size):
+        yield values[start:start + size]
 
 
 def _now() -> str:
@@ -79,16 +90,50 @@ def _quarantine_database(path: Path) -> Path:
 
 
 class HistoryService:
-    def __init__(self, db_file, details_root=None):
+    def __init__(
+        self,
+        db_file,
+        details_root=None,
+        backups_root=None,
+        retention_days=DEFAULT_RETENTION_DAYS,
+        retention_keep=DEFAULT_RETENTION_KEEP,
+    ):
         self.db_file = str(db_file)
         self._details_root = Path(details_root) if details_root is not None else None
+        self._backups_root = Path(backups_root) if backups_root is not None else None
+        self._prepare_database()
         with self._conn() as c:
-            apply_migrations(c)
             # execuções que ficaram "em andamento" por fechamento abrupto do app
             c.execute(
                 "UPDATE executions SET status=? WHERE status=?",
                 (INTERRUPTED, RUNNING),
             )
+        if retention_days is not None or retention_keep is not None:
+            try:
+                self.prune(days=retention_days, keep_last=retention_keep)
+            except Exception:  # noqa: BLE001 - retenção não deve impedir o app de abrir
+                get_logger().exception("Falha ao aplicar a retenção do histórico")
+
+    def _prepare_database(self) -> None:
+        """Ativa WAL, faz backup de banco antigo e aplica as migrações."""
+        path = Path(self.db_file)
+        existed = path.exists() and path.stat().st_size > 0
+        with self._conn() as c:
+            c.execute("PRAGMA journal_mode=WAL")
+            version = get_version(c)
+
+        if existed and version < SCHEMA_VERSION:
+            try:
+                backup = self.backup(reason="pre-migration")
+            except (OSError, sqlite3.Error, ToolkitError) as exc:
+                raise ToolkitError(
+                    "Não foi possível criar o backup antes de migrar o banco do histórico. "
+                    "A migração não foi aplicada; verifique o espaço e as permissões da pasta."
+                ) from exc
+            get_logger().info("Backup criado antes da migração em %s", backup)
+
+        with self._conn() as c:
+            apply_migrations(c)
 
     @classmethod
     def open_with_recovery(cls, db_file, on_recover=None) -> "HistoryService":
@@ -126,6 +171,200 @@ class HistoryService:
             conn.commit()
         finally:
             conn.close()
+
+    # ---- manutenção do banco ---------------------------------------------
+
+    def _backups_dir(self) -> Path:
+        if self._backups_root is not None:
+            self._backups_root.mkdir(parents=True, exist_ok=True)
+            return self._backups_root
+        return backups_dir()
+
+    def backup(self, reason: str = "manual", directory=None) -> Path:
+        """Cria uma cópia consistente do banco e valida a integridade.
+
+        Usa a API de backup do SQLite, que também copia transações ainda no WAL.
+        """
+        target_dir = Path(directory) if directory is not None else self._backups_dir()
+        target_dir.mkdir(parents=True, exist_ok=True)
+        slug = re.sub(r"[^a-z0-9]+", "-", str(reason).casefold()).strip("-") or "manual"
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        candidate = target_dir / f"finance_toolkit-{stamp}-{slug}.db"
+        counter = 1
+        while candidate.exists():
+            candidate = target_dir / f"finance_toolkit-{stamp}-{slug}-{counter}.db"
+            counter += 1
+
+        source = sqlite3.connect(self.db_file, timeout=10)
+        dest = sqlite3.connect(candidate)
+        try:
+            source.backup(dest)
+            dest.commit()
+            check = dest.execute("PRAGMA integrity_check").fetchone()
+            if not check or check[0] != "ok":
+                raise ToolkitError(
+                    "O backup criado não passou na verificação de integridade"
+                    f": {check[0] if check else 'sem resposta'}"
+                )
+        except BaseException:
+            dest.close()
+            source.close()
+            for suffix in ("", "-wal", "-shm", "-journal"):
+                Path(f"{candidate}{suffix}").unlink(missing_ok=True)
+            raise
+        dest.close()
+        source.close()
+        return candidate
+
+    @staticmethod
+    def _validate_backup(path: Path) -> None:
+        try:
+            conn = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
+        except sqlite3.Error as exc:
+            raise ToolkitError(f"Não foi possível abrir o backup {path}: {exc}") from exc
+        try:
+            try:
+                check = conn.execute("PRAGMA integrity_check").fetchone()
+                names = {
+                    row[0]
+                    for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                }
+                version = get_version(conn)
+            except sqlite3.DatabaseError as exc:
+                raise ToolkitError(
+                    f"O arquivo {path} não é um backup válido do histórico."
+                ) from exc
+            if not check or check[0] != "ok":
+                raise ToolkitError(
+                    f"O backup {path} está corrompido: {check[0] if check else 'sem resposta'}"
+                )
+            if "executions" not in names:
+                raise ToolkitError(f"O arquivo {path} não contém um histórico do Finance Toolkit.")
+            if version > SCHEMA_VERSION:
+                raise ToolkitError(
+                    f"O backup está na versão {version}, mas este aplicativo suporta até "
+                    f"{SCHEMA_VERSION}. Atualize o Finance Toolkit antes de restaurar."
+                )
+        finally:
+            conn.close()
+
+    def restore(self, backup_path) -> Path | None:
+        """Restaura um backup validado e devolve o backup de segurança do estado atual.
+
+        O banco atual é copiado antes da troca. Backups de versões anteriores são
+        migrados em seguida; arquivos ``-wal``/``-shm`` antigos são removidos.
+        """
+        source = Path(backup_path)
+        current = Path(self.db_file)
+        if not source.exists():
+            raise ToolkitError(f"Backup não encontrado: {source}")
+        if current.exists() and source.resolve() == current.resolve():
+            raise ToolkitError("Escolha um backup diferente do banco em uso.")
+        self._validate_backup(source)
+
+        safety = None
+        if current.exists():
+            try:
+                safety = self.backup(reason="pre-restore")
+            except (OSError, sqlite3.Error, ToolkitError):
+                # Um banco atual corrompido não deve impedir a restauração.
+                get_logger().warning(
+                    "Não foi possível criar o backup de segurança antes de restaurar", exc_info=True
+                )
+
+        fd, temp_name = tempfile.mkstemp(
+            prefix=f".{current.name}.", suffix=".restore", dir=current.parent
+        )
+        os.close(fd)
+        temp = Path(temp_name)
+        try:
+            shutil.copyfile(source, temp)
+            for suffix in ("-wal", "-shm"):
+                Path(f"{current}{suffix}").unlink(missing_ok=True)
+            os.replace(temp, current)
+        except BaseException:
+            temp.unlink(missing_ok=True)
+            raise
+
+        with self._conn() as c:
+            c.execute("PRAGMA journal_mode=WAL")
+            apply_migrations(c)
+            c.execute(
+                "UPDATE executions SET status=? WHERE status=?",
+                (INTERRUPTED, RUNNING),
+            )
+        get_logger().info("Histórico restaurado de %s", source)
+        return safety
+
+    def prune(
+        self,
+        days: int | None = None,
+        keep_last: int | None = None,
+    ) -> dict:
+        """Remove execuções antigas e além do limite de retenção.
+
+        Uma execução só é removida se satisfizer **todos** os critérios
+        informados: estar mais velha que ``days`` e ficar fora das ``keep_last``
+        mais recentes. Execuções em andamento nunca são removidas. Ao remover a
+        execução, eventos, detalhes e o JSONL externo também são apagados.
+        """
+        if days is None and keep_last is None:
+            return {"executions": 0, "events": 0, "details": 0, "files": 0}
+        if days is not None and days < 0:
+            raise ValueError("days não pode ser negativo")
+        if keep_last is not None and keep_last < 0:
+            raise ValueError("keep_last não pode ser negativo")
+
+        clauses = ["status != ?"]
+        args: list = [RUNNING]
+        if days is not None:
+            cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+            clauses.append("started_at < ?")
+            args.append(cutoff)
+        if keep_last is not None:
+            clauses.append("id NOT IN (SELECT id FROM executions ORDER BY id DESC LIMIT ?)")
+            args.append(int(keep_last))
+
+        result = {"executions": 0, "events": 0, "details": 0, "files": 0}
+        with self._conn() as c:
+            rows = c.execute(
+                f"SELECT id, details_file FROM executions WHERE {' AND '.join(clauses)}",
+                args,
+            ).fetchall()
+            ids = [int(row["id"]) for row in rows]
+            for chunk in _chunks(ids):
+                placeholders = ",".join("?" * len(chunk))
+                result["events"] += c.execute(
+                    f"DELETE FROM execution_events WHERE execution_id IN ({placeholders})", chunk
+                ).rowcount
+                result["details"] += c.execute(
+                    f"DELETE FROM execution_details WHERE execution_id IN ({placeholders})", chunk
+                ).rowcount
+                result["executions"] += c.execute(
+                    f"DELETE FROM executions WHERE id IN ({placeholders})", chunk
+                ).rowcount
+
+        for row in rows:
+            try:
+                path = self._details_path(row["details_file"])
+            except OSError:
+                get_logger().warning("Não foi possível acessar a pasta de detalhes", exc_info=True)
+                continue
+            if path is None or not path.exists():
+                continue
+            try:
+                path.unlink()
+                result["files"] += 1
+            except OSError:
+                get_logger().warning("Não foi possível apagar o arquivo de detalhes %s", path,
+                                     exc_info=True)
+
+        if result["executions"]:
+            get_logger().info(
+                "Retenção removeu %s execução(ões), %s evento(s), %s detalhe(s) e %s arquivo(s).",
+                result["executions"], result["events"], result["details"], result["files"],
+            )
+        return result
 
     # ---- execuções -------------------------------------------------------
 
@@ -248,12 +487,12 @@ class HistoryService:
         row = self.get(exec_id)
         if not row:
             return []
-        external = self._details_path(row.get("details_file"))
-        if external is not None:
-            try:
+        try:
+            external = self._details_path(row.get("details_file"))
+            if external is not None:
                 return self._read_details_file(external, limit, offset)
-            except (OSError, UnicodeDecodeError):
-                get_logger().exception("Falha ao ler detalhes externos da execução %s", exec_id)
+        except (OSError, UnicodeDecodeError):
+            get_logger().exception("Falha ao ler detalhes externos da execução %s", exec_id)
 
         sql = "SELECT data_json FROM execution_details WHERE execution_id=? ORDER BY seq"
         args: list = [exec_id]

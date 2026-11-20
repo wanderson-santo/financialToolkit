@@ -49,6 +49,11 @@ MIGRATIONS: dict[int, tuple[str, ...]] = {
         """,
         "CREATE INDEX IF NOT EXISTS idx_details_exec ON execution_details(execution_id, seq)",
     ),
+    3: (
+        "CREATE INDEX IF NOT EXISTS idx_exec_mode ON executions(mode, id DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_exec_module ON executions(module_id, id DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_exec_started ON executions(started_at)",
+    ),
 }
 
 SCHEMA_VERSION = max(MIGRATIONS)

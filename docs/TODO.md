@@ -2,7 +2,7 @@
 
 > **Etapa:** 6 — construção do backlog  
 > **Fonte:** `docs/project-discovery.md`, `docs/technical-audit.md`, `docs/improvement-roadmap.md`  
-> **Status geral:** em implementação — FT-001 a FT-017 concluídas.
+> **Status geral:** em implementação — FT-001 a FT-018 concluídas.
 >
 > **Regra de IDs:** os IDs `FT-xxx` são permanentes. Reordene, divida ou adie tarefas, mas não reutilize nem renumere IDs.
 
@@ -66,7 +66,7 @@ FT-001 → FT-002 → FT-005 → FT-003 → FT-004 → FT-006 → FT-007
 
 ### Próxima tarefa recomendada
 
-**FT-018 — Ativar WAL, índices, retenção e backup do banco.** Fecha a integridade do histórico com os detalhes já persistidos: WAL para concorrência, índices para consulta, retenção configurável e backup antes de migrações.
+**FT-019 — Journal transacional e undo de operações.** Com histórico, detalhes e banco protegidos, o próximo passo do caminho crítico é registrar movimentações antes de executá-las e permitir desfazer operações reversíveis.
 
 ---
 
@@ -265,14 +265,14 @@ FT-001 → FT-002 → FT-005 → FT-003 → FT-004 → FT-006 → FT-007
 
 ### FT-018 — Ativar WAL, índices, retenção e backup do banco
 
-- [ ] **FT-018 — Ativar WAL, índices, retenção e backup do banco**
+- [x] **FT-018 — Ativar WAL, índices, retenção e backup do banco**
   - **Descrição:** configurar WAL, índices adequados, política de retenção (dias/quantidade) e backup antes de operações sensíveis.
   - **Problema/necessidade:** AUD-09; banco cresce sem limite e concorrência é pior.
   - **Arquivos/componentes:** `core/history_service.py`, `core/paths.py` (`backups_dir`), testes.
   - **Prioridade:** P1 · **Complexidade:** média · **Dependências:** FT-016
   - **Critérios de aceite:** WAL ativo; consultas filtradas usam índice; retenção remove apenas registros elegíveis; backup restaurável; testes.
   - **Testes necessários:** retenção por data/quantidade; restauração; verificação de integridade.
-  - **Status:** pendente
+  - **Status:** concluída
 
 ### FT-019 — Journal transacional e undo de operações
 

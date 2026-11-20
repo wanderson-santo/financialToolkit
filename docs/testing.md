@@ -25,8 +25,8 @@ No Windows, `run_tests.bat` roda apenas a suíte. Para cobertura, instale
 - Data da medição: 19/11/2026
 - Python: 3.13.13
 - `coverage`: 7.17.3
-- Testes: **100 aprovados**
-- Cobertura de linhas: **60,3%** (2.764 instruções, 1.098 sem cobertura)
+- Testes: **113 aprovados**
+- Cobertura de linhas: **61,6%** (2.915 instruções, 1.118 sem cobertura)
 - Configuração: `.coveragerc` (`source = app, core, modules`, sem os testes)
 
 A interface Tkinter (`app/pages.py`, `app/widgets.py`, `app/main_window.py`) ainda
@@ -62,6 +62,7 @@ Tarefas P1 já concluídas também têm cobertura de regressão:
 | FT-013 | `ExecutionContextTests.*`, `HistoryTests.test_start_grava_run_id` |
 | FT-016 | `MigrationTests.*` |
 | FT-017 | `HistoryDetailsTests.*` (zero/poucos/muitos detalhes, arquivo externo, falha de escrita, ida e volta e exportação) |
+| FT-018 | `MaintenanceTests.*` (WAL, uso de índices, retenção por data/quantidade, backup e restauração) |
 
 ## Atualizando a baseline
 

@@ -126,7 +126,7 @@
 
 ## ADR-014 — Versionar o esquema SQLite com migrações incrementais
 
-- **Status:** proposta
+- **Status:** aceita (implementada na FT-016; backup automático antes da migração na FT-018)
 - **Contexto:** `CREATE TABLE IF NOT EXISTS` não evolui esquema; futuro exige mudanças.
 - **Decisão:** `PRAGMA user_version`, migrações numeradas, backup antes de migrar e teste de upgrade.
 - **Justificativa:** evolução segura e recuperável.
@@ -135,7 +135,7 @@
 
 ## ADR-015 — Persistir detalhes de execução com retenção
 
-- **Status:** aceita (implementada na FT-017; retenção configurável fica para a FT-018)
+- **Status:** aceita (implementada na FT-017; retenção automática na FT-018, configuração pela UI na FT-027)
 - **Contexto:** detalhes por linha não são gravados; histórico perde valor de auditoria.
 - **Decisão:** armazenar detalhes em tabela/arquivo referenciado, com limite e retenção configurável; exportação e consulta pela UI.
 - **Justificativa:** rastreabilidade, suporte, undo e relatórios.
@@ -189,7 +189,7 @@
 
 ## ADR-021 — Retenção e privacidade de dados locais
 
-- **Status:** proposta
+- **Status:** parcialmente implementada (retenção e backup no núcleo na FT-018; controles de UI e configuração na FT-027)
 - **Contexto:** histórico/logs guardam caminhos e parâmetros indefinidamente, sem controles.
 - **Decisão:** política de retenção configurável, limpeza/exportação, localização visível dos dados e documentação do que é gravado; sem telemetria.
 - **Justificativa:** governança/LGPD e sustentabilidade do banco.

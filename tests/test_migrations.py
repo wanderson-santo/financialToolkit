@@ -30,6 +30,10 @@ CREATE TABLE favorites (module_id TEXT PRIMARY KEY);
 
 
 class MigrationTests(TempDirCase):
+    def open_history(self, path):
+        # A retenção automática é desativada para os testes serem determinísticos.
+        return HistoryService(path, retention_days=None, retention_keep=None)
+
     def _connect(self, path):
         conn = sqlite3.connect(path)
         self.addCleanup(conn.close)
@@ -37,7 +41,7 @@ class MigrationTests(TempDirCase):
 
     def test_banco_novo_nasce_na_versao_atual(self):
         path = self.tmp / "novo.db"
-        HistoryService(path)
+        self.open_history(path)
 
         conn = self._connect(path)
         self.assertEqual(get_version(conn), SCHEMA_VERSION)
@@ -51,6 +55,7 @@ class MigrationTests(TempDirCase):
         }
         self.assertIn("idx_events_exec", indexes)
         self.assertIn("idx_details_exec", indexes)
+        self.assertTrue({"idx_exec_mode", "idx_exec_module", "idx_exec_started"} <= indexes)
         columns = {row[1] for row in conn.execute("PRAGMA table_info(executions)")}
         self.assertTrue({"details_file", "details_count"} <= columns)
 
@@ -76,7 +81,7 @@ class MigrationTests(TempDirCase):
         conn.commit()
         self.assertEqual(get_version(conn), 0)
 
-        history = HistoryService(path)
+        history = self.open_history(path)
 
         self.assertEqual(history.get(exec_id)["summary"], "execução antiga")
         self.assertEqual(history.events(exec_id)[0]["message"], "evento antigo")
@@ -98,7 +103,7 @@ class MigrationTests(TempDirCase):
         conn.commit()
         self.assertEqual(get_version(conn), 1)
 
-        history = HistoryService(path)
+        history = self.open_history(path)
 
         row = history.get(exec_id)
         self.assertEqual(row["summary"], "execução v1")
@@ -109,16 +114,16 @@ class MigrationTests(TempDirCase):
 
     def test_migracao_e_idempotente(self):
         path = self.tmp / "repetida.db"
-        history = HistoryService(path)
+        history = self.open_history(path)
         history.set_settings("m1", {"ok": True})
 
-        HistoryService(path)
+        self.open_history(path)
         conn = self._connect(path)
         for _ in range(2):
             self.assertEqual(apply_migrations(conn), SCHEMA_VERSION)
         self.assertEqual(get_version(conn), SCHEMA_VERSION)
 
-        reopened = HistoryService(path)
+        reopened = self.open_history(path)
         self.assertEqual(reopened.get_settings("m1"), {"ok": True})
 
     def test_versao_mais_nova_e_recusada(self):
@@ -128,7 +133,7 @@ class MigrationTests(TempDirCase):
         conn.commit()
 
         with self.assertRaises(ToolkitError) as ctx:
-            HistoryService(path)
+            self.open_history(path)
 
         self.assertIn(str(SCHEMA_VERSION + 1), str(ctx.exception))
         self.assertIn("Atualize", str(ctx.exception))
