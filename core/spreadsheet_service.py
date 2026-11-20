@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import codecs
+import csv
+import io
 import re
 from pathlib import Path
 
@@ -13,6 +15,9 @@ from .logging_service import get_logger
 SHEET_FILETYPES = [("Planilhas", "*.xlsx *.xlsm *.xls *.csv *.tsv *.txt"), ("Todos os arquivos", "*.*")]
 _TEXT_EXT = {".csv", ".txt", ".tsv"}
 _UNNAMED_HEADER = re.compile(r"^Unnamed: \d+$")
+_ENCODINGS = ("utf-8-sig", "cp1252", "latin-1")
+_DELIMITERS = (";", ",", "\t", "|")
+_SAMPLE_SIZE = 65536
 
 
 def _header_base(value) -> str:
@@ -44,30 +49,94 @@ def unique_headers(columns) -> list[str]:
     return names
 
 
-def _csv_params(path: Path) -> tuple[str, str]:
-    raw = path.read_bytes()[:65536]
-    encoding, sample = "latin-1", ""
-    for enc in ("utf-8-sig", "cp1252"):
+def _can_decode(path: Path, encoding: str) -> bool:
+    """Valida a codificação no arquivo inteiro, em blocos."""
+    decoder = codecs.getincrementaldecoder(encoding)()
+    try:
+        with path.open("rb") as fh:
+            while chunk := fh.read(1 << 20):
+                decoder.decode(chunk)
+        decoder.decode(b"", final=True)
+    except UnicodeDecodeError:
+        return False
+    return True
+
+
+def _detect_encoding(path: Path, encoding: str | None) -> str:
+    if encoding:
         try:
-            sample = codecs.getincrementaldecoder(enc)().decode(raw, final=False)
-            encoding = enc
-            break
-        except UnicodeDecodeError:
+            codecs.lookup(encoding)
+        except LookupError as exc:
+            raise ToolkitError(f"Codificação desconhecida: {encoding!r}.") from exc
+        if _can_decode(path, encoding):
+            return encoding
+        raise ToolkitError(
+            f"Não foi possível decodificar {path.name} com a codificação '{encoding}'. "
+            "Tente UTF-8, cp1252 (Windows-1252) ou latin-1."
+        )
+    for enc in _ENCODINGS:
+        if _can_decode(path, enc):
+            return enc
+    return "latin-1"  # inalcançável: latin-1 aceita qualquer byte
+
+
+def _sample_text(path: Path, encoding: str) -> str:
+    decoder = codecs.getincrementaldecoder(encoding)()
+    with path.open("rb") as fh:
+        raw = fh.read(_SAMPLE_SIZE)
+    return decoder.decode(raw, final=False)
+
+
+def _detect_separator(sample: str) -> str:
+    """Escolhe o separador pela consistência das colunas, respeitando aspas."""
+    best, best_score = ";", None
+    for sep in _DELIMITERS:
+        try:
+            rows = [
+                row for row in csv.reader(io.StringIO(sample), delimiter=sep)
+                if any(cell.strip() for cell in row)
+            ]
+        except csv.Error:
             continue
-    else:
-        sample = raw.decode("latin-1")
-    first = sample.splitlines()[0] if sample else ""
-    counts = {sep: first.count(sep) for sep in (";", ",", "\t", "|")}
-    separator = max(counts, key=counts.get) if any(counts.values()) else ";"
-    return encoding, separator
+        widths = [len(row) for row in rows]
+        if not widths:
+            continue
+        mode = max(widths, key=lambda w: (widths.count(w), w))
+        score = (mode > 1, widths.count(mode) / len(widths), mode)
+        if best_score is None or score > best_score:
+            best, best_score = sep, score
+    return best
 
 
-def read_table(path, sheet: str | None = None, nrows: int | None = None) -> pd.DataFrame:
+def _csv_params(
+    path: Path, encoding: str | None = None, separator: str | None = None
+) -> tuple[str, str]:
+    if separator is not None and len(separator) != 1:
+        raise ToolkitError("O separador do CSV deve ter exatamente um caractere.")
+    enc = _detect_encoding(path, encoding)
+    sep = separator or _detect_separator(_sample_text(path, enc))
+    get_logger().info(
+        "CSV %s: codificação %s, separador %r%s.",
+        path.name, enc, sep, " (forçado)" if separator else "",
+    )
+    return enc, sep
+
+
+def read_table(
+    path,
+    sheet: str | None = None,
+    nrows: int | None = None,
+    encoding: str | None = None,
+    separator: str | None = None,
+) -> pd.DataFrame:
     """Lê a planilha preservando tipos nativos do Excel (dtype=object).
 
-    CSV é lido todo como texto. Os nomes das colunas viram `str`, recebem
-    ``strip`` e são tornados únicos por :func:`unique_headers`; renomeações
-    são registradas no log.
+    CSV é lido todo como texto. A codificação é validada no arquivo inteiro
+    (utf-8-sig, cp1252 e latin-1, nessa ordem) e o separador é detectado
+    respeitando aspas; ``encoding`` e ``separator`` permitem forçar uma
+    escolha. Os nomes das colunas viram `str`, recebem ``strip`` e são
+    tornados únicos por :func:`unique_headers`; renomeações são registradas
+    no log.
     """
     p = Path(path)
     if not p.is_file():
@@ -75,8 +144,22 @@ def read_table(path, sheet: str | None = None, nrows: int | None = None) -> pd.D
     ext = p.suffix.lower()
     try:
         if ext in _TEXT_EXT:
-            encoding, sep = _csv_params(p)
-            df = pd.read_csv(p, sep=sep, encoding=encoding, dtype=str, nrows=nrows)
+            enc, sep = _csv_params(p, encoding, separator)
+            try:
+                df = pd.read_csv(p, sep=sep, encoding=enc, dtype=str, nrows=nrows)
+            except UnicodeDecodeError as exc:
+                raise ToolkitError(
+                    f"Não foi possível decodificar {p.name} como texto ({enc}). "
+                    "Verifique a codificação do arquivo ou selecione outra."
+                ) from exc
+            except pd.errors.EmptyDataError as exc:
+                raise ToolkitError(
+                    f"O arquivo {p.name} está vazio ou não possui cabeçalho."
+                ) from exc
+            except pd.errors.ParserError as exc:
+                raise ToolkitError(
+                    f"Não foi possível interpretar {p.name} como CSV: {exc}"
+                ) from exc
         else:
             engine = "xlrd" if ext == ".xls" else "openpyxl"
             df = pd.read_excel(p, sheet_name=sheet or 0, dtype=object, nrows=nrows, engine=engine)
@@ -98,8 +181,11 @@ def read_table(path, sheet: str | None = None, nrows: int | None = None) -> pd.D
     return df
 
 
-def list_columns(path, sheet: str | None = None) -> list[str]:
-    return list(read_table(path, sheet=sheet, nrows=0).columns)
+def list_columns(path, sheet: str | None = None, encoding: str | None = None,
+                 separator: str | None = None) -> list[str]:
+    return list(read_table(
+        path, sheet=sheet, nrows=0, encoding=encoding, separator=separator,
+    ).columns)
 
 
 def list_sheets(path) -> list[str]:

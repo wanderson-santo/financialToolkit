@@ -139,14 +139,14 @@ FT-001 → FT-002 → FT-005 → FT-003 → FT-004 → FT-006 → FT-007
 
 ### FT-007 — Tornar a detecção de codificação/separador CSV confiável
 
-- [ ] **FT-007 — Tornar a detecção de codificação/separador CSV confiável**
+- [x] **FT-007 — Tornar a detecção de codificação/separador CSV confiável**
   - **Descrição:** validar a codificação no arquivo inteiro ou em amostras distribuídas e permitir fallback explícito; detectar separador considerando aspas.
   - **Problema/necessidade:** AUD-16; byte não-UTF-8 após 64 KB gera `UnicodeDecodeError` ou mojibake.
   - **Arquivos/componentes:** `core/spreadsheet_service.py` (`_csv_params`, `read_table`), testes com fixtures.
   - **Prioridade:** P0 · **Complexidade:** média · **Dependências:** —
   - **Critérios de aceite:** arquivo UTF-8/BOM/cp1252/latin-1 é lido corretamente ou rejeitado com mensagem clara; nenhum `UnicodeDecodeError` cru chega à UI; separador `;`, `,`, tab e `|` testado; codificação detectada é logada.
   - **Testes necessários:** fixtures com acentos, BOM, byte tardio, aspas e separadores; teste de arquivo vazio/só cabeçalho.
-  - **Status:** pendente
+  - **Status:** concluída
 
 ### FT-008 — Gravar manifesto de duplicatas antes das movimentações
 
