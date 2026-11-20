@@ -205,14 +205,14 @@ FT-001 → FT-002 → FT-005 → FT-003 → FT-004 → FT-006 → FT-007
 
 ### FT-013 — Correlacionar `run_id` entre log e histórico
 
-- [ ] **FT-013 — Correlacionar `run_id` entre log e histórico**
+- [x] **FT-013 — Correlacionar `run_id` entre log e histórico**
   - **Descrição:** criar o identificador de execução antes de `history.start()` e reutilizá-lo no `ExecutionContext` e na UI.
   - **Problema/necessidade:** AUD-10; banco e log usam IDs diferentes.
   - **Arquivos/componentes:** `app/pages.py`, `core/execution_context.py`, `core/history_service.py`, testes.
   - **Prioridade:** P1 · **Complexidade:** pequena · **Dependências:** —
   - **Critérios de aceite:** `executions.run_id` é preenchido; linhas de log contêm o mesmo ID; detalhe do histórico exibe o ID; testes.
   - **Testes necessários:** unidade de criação/passagem do ID; teste de registro no banco.
-  - **Status:** pendente
+  - **Status:** concluída
 
 ### FT-014 — Criar baseline de cobertura e testes de regressão
 

@@ -52,6 +52,7 @@ class ModulePage(ttk.Frame):
         self._cancel = threading.Event()
         self._events: list[tuple[str, str, str]] = []
         self._exec_id: int | None = None
+        self._run_id = ""
         self._last_result: Result | None = None
         self._mode = ""
         self._running = False
@@ -194,7 +195,9 @@ class ModulePage(ttk.Frame):
             self._finished = False
             self._events = []
             self._last_result = None
-            self._exec_id = self.history.start(self.module, mode, values)
+            run_id = ExecutionContext.new_run_id()
+            self._run_id = run_id
+            self._exec_id = self.history.start(self.module, mode, values, run_id=run_id)
             self.table.clear()
             self.summary_var.set("")
             self.bar["value"] = 0
@@ -204,17 +207,22 @@ class ModulePage(ttk.Frame):
             self.log_text.configure(state="disabled")
             self.btn_export.configure(state="disabled")
             self.btn_open.configure(state="disabled")
-            self._append_log("info", f"{MODE_LABELS[mode]} iniciada.")
+            self._append_log("info", f"{MODE_LABELS[mode]} iniciada (ID {run_id}).")
             self._set_running(True)
-            threading.Thread(target=self._work, args=(mode, values), daemon=True).start()
+            threading.Thread(target=self._work, args=(mode, values, run_id), daemon=True).start()
         except Exception:
             self._release_operation()
             raise
         self.after(80, self._poll)
 
-    def _work(self, mode: str, values: dict) -> None:
+    def _work(self, mode: str, values: dict, run_id: str) -> None:
         """Roda numa thread: nunca toca na interface, só coloca mensagens na fila."""
-        ctx = ExecutionContext(self.module.module_id, emit=lambda *a: self._queue.put(a), cancel_event=self._cancel)
+        ctx = ExecutionContext(
+            self.module.module_id,
+            emit=lambda *a: self._queue.put(a),
+            cancel_event=self._cancel,
+            run_id=run_id,
+        )
         try:
             result = self.module.preview(values, ctx) if mode == "preview" else self.module.execute(values, ctx)
         except CancelledError:
@@ -272,7 +280,8 @@ class ModulePage(ttk.Frame):
         self.summary_label.configure(foreground=STATUS_COLORS.get(result.status, theme.TEXT))
         if result.status in (SUCCESS, PARTIAL):
             self.bar["value"] = 100
-        self.status_var.set("Concluído." if result.status in (SUCCESS, PARTIAL) else STATUS_LABELS.get(result.status, ""))
+        status = "Concluído." if result.status in (SUCCESS, PARTIAL) else STATUS_LABELS.get(result.status, "")
+        self.status_var.set(f"{status} · ID {self._run_id}" if self._run_id else status)
         self.table.set_rows(result.details)
         self._append_log("error" if result.status == FAILED else "info", result.summary)
         self.btn_export.configure(state="normal" if result.details else "disabled")
@@ -443,6 +452,7 @@ class HistoryPage(ttk.Frame):
             params = row["params_json"] or ""
         lines = [
             f"Módulo: {row['module_name']} (v{row['module_version']})",
+            f"ID da execução: {row['run_id'] or '-'}",
             f"Modo: {MODE_LABELS.get(row['mode'], row['mode'])}",
             f"Início: {row['started_at']}    Fim: {row['finished_at'] or '-'}",
             f"Status: {STATUS_LABELS.get(row['status'], row['status'])}",

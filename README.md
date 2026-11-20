@@ -113,6 +113,7 @@ histórico e a exportação já funcionam sem mexer na interface.
 - Apenas uma execução que altera arquivos roda por vez; pré-visualizações (somente leitura) podem rodar em paralelo.
 - Operações que movem arquivos pedem confirmação e podem ser pré-visualizadas antes.
 - Duplicatas vão para quarentena com manifesto CSV, nunca são excluídas.
+- Cada execução recebe um ID curto, registrado no histórico e nas linhas de log (permite correlacionar suporte e auditoria).
 - Os logs registram caminhos e contagens, não o conteúdo das células.
 - O histórico local **não** é uma trilha de auditoria inviolável (qualquer pessoa com acesso à
   pasta de dados pode editá-lo).

@@ -16,11 +16,23 @@ class ExecutionContext:
     """O `emit(kind, *payload)` recebe ("log", nivel, msg) e ("progress", atual, total, etapa).
 
     Ele costuma ser uma fila: a thread de trabalho nunca toca na interface.
+    O ``run_id`` pode ser criado antes do histórico e reutilizado para
+    correlacionar as linhas de log com a execução registrada no banco.
     """
 
-    def __init__(self, module_id: str, emit=None, cancel_event: threading.Event | None = None):
+    @staticmethod
+    def new_run_id() -> str:
+        return uuid.uuid4().hex[:10]
+
+    def __init__(
+        self,
+        module_id: str,
+        emit=None,
+        cancel_event: threading.Event | None = None,
+        run_id: str | None = None,
+    ):
         self.module_id = module_id
-        self.run_id = uuid.uuid4().hex[:10]
+        self.run_id = run_id or self.new_run_id()
         self._emit = emit or (lambda *args: None)
         self._cancel = cancel_event or threading.Event()
         self._last_progress = 0.0

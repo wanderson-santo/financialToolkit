@@ -6,6 +6,7 @@ from core.base_module import (
     CANCELLED, FAILED, INTERRUPTED, PARTIAL, RUNNING, STATUS_LABELS, SUCCESS,
     Result, build_result, validate_status,
 )
+from core.execution_context import ExecutionContext
 from core.history_service import HistoryService
 from core.normalizers import (
     as_text, clean_text, cnpj_is_valid, format_cnpj, is_blank, normalize_cnpj, parse_date, parse_number,
@@ -104,6 +105,21 @@ class StatusTests(unittest.TestCase):
         self.assertNotIn(RUNNING, {SUCCESS, PARTIAL, FAILED, CANCELLED, INTERRUPTED})
 
 
+class ExecutionContextTests(unittest.TestCase):
+    def test_reutiliza_run_id_informado(self):
+        ctx = ExecutionContext("m1", run_id="run123")
+        self.assertEqual(ctx.run_id, "run123")
+        with self.assertLogs("finance_toolkit", level="INFO") as logs:
+            ctx.log("mensagem")
+        self.assertIn("[m1 run123] mensagem", logs.output[0])
+
+    def test_gera_run_id_quando_ausente(self):
+        first = ExecutionContext("m1").run_id
+        second = ExecutionContext("m1").run_id
+        self.assertEqual(len(first), 10)
+        self.assertNotEqual(first, second)
+
+
 class HistoryTests(TempDirCase):
     def test_historico_config_favoritos(self):
         h = HistoryService(self.tmp / "t.db")
@@ -128,6 +144,16 @@ class HistoryTests(TempDirCase):
 
         h2 = HistoryService(self.tmp / "t.db")  # reabrir marca "running" como interrompido
         self.assertEqual(h2.recent(1)[0]["status"], INTERRUPTED)
+
+    def test_start_grava_run_id(self):
+        h = HistoryService(self.tmp / "t.db")
+
+        class M:
+            module_id, name, version = "m1", "Módulo 1", "1.0"
+
+        exec_id = h.start(M, "execute", {}, run_id="run123")
+        self.assertEqual(h.get(exec_id)["run_id"], "run123")
+        self.assertEqual(h.recent(1)[0]["run_id"], "run123")
 
     def test_finish_registra_cancelamento_e_interrupcao(self):
         h = HistoryService(self.tmp / "t.db")
