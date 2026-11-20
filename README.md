@@ -25,7 +25,7 @@ Todas têm **Pré-visualizar** (não altera nada), **Executar**, **Cancelar** (s
 Requisitos: Windows, Python 3.10–3.12 com Tcl/Tk (vem marcado no instalador) e o launcher `py`.
 
 - `run_dev.bat` — cria o ambiente, instala as dependências e abre o app.
-- `run_tests.bat` — roda os testes automatizados.
+- `run_tests.bat` — roda os testes automatizados (para cobertura, use `python scripts/run_tests.py`).
 - `build.bat` — roda os testes e gera `dist\FinanceToolkit.exe` com PyInstaller.
 
 Manualmente:
@@ -35,9 +35,13 @@ py -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements-build.txt
 python main.py                                   # abrir o app
-python -m unittest discover -s tests -t .        # testes
+python -m unittest discover -s tests -t .        # somente testes
+python scripts/run_tests.py                      # testes + cobertura
 pyinstaller --noconfirm --clean finance_toolkit.spec
 ```
+
+Para testes com cobertura, instale também `requirements-dev.txt`. A baseline e o
+mapeamento dos testes de regressão estão em [`docs/testing.md`](docs/testing.md).
 
 Dados do app (histórico, configurações, logs): `%APPDATA%\FinanceToolkit`.
 

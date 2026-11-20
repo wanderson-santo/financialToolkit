@@ -36,7 +36,7 @@ Tipos: `feat`, `fix`, `docs`, `test`, `refactor`, `chore`.
 
 ### Checklist antes de commitar
 
-- [ ] `python -m unittest discover -s tests -t .` passa
+- [ ] `python scripts/run_tests.py` passa (testes + cobertura)
 - [ ] `python -m compileall -q app core modules tests` passa
 - [ ] `git diff --check` sem problemas de espaço
 - [ ] `git status --short` mostra apenas arquivos intencionais

@@ -216,14 +216,14 @@ FT-001 → FT-002 → FT-005 → FT-003 → FT-004 → FT-006 → FT-007
 
 ### FT-014 — Criar baseline de cobertura e testes de regressão
 
-- [ ] **FT-014 — Criar baseline de cobertura e testes de regressão**
+- [x] **FT-014 — Criar baseline de cobertura e testes de regressão**
   - **Descrição:** configurar medição de cobertura (ferramenta de desenvolvimento aprovada), registrar baseline e adicionar testes de regressão para os P0 (FT-001–FT-010).
   - **Problema/necessidade:** AUD-28; defeitos confirmados passaram pela suíte.
   - **Arquivos/componentes:** `tests/`, configuração de cobertura, possivelmente `requirements-dev.txt` (somente com autorização).
   - **Prioridade:** P1 · **Complexidade:** média · **Dependências:** —
   - **Critérios de aceite:** comando único roda testes + cobertura; relatório gerado; todos os P0 têm teste que falha no código antigo e passa no novo; baseline documentado.
   - **Testes necessários:** os próprios testes de regressão; verificar que falham antes da correção.
-  - **Status:** pendente
+  - **Status:** concluída
 
 ### FT-015 — Adotar controle de versão e higiene de repositório
 
