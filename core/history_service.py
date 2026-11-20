@@ -13,6 +13,7 @@ from pathlib import Path
 from .base_module import (
     CANCELLED, FAILED, INTERRUPTED, PARTIAL, RUNNING, SUCCESS,
 )
+from .db_migrations import apply_migrations
 from .exceptions import ToolkitError
 from .logging_service import get_logger
 
@@ -23,26 +24,6 @@ _CORRUPTION_MARKERS = (
     "file is encrypted or is not a database",
     "database corruption",
 )
-
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS executions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    run_id TEXT, module_id TEXT NOT NULL, module_name TEXT, module_version TEXT,
-    mode TEXT NOT NULL, started_at TEXT NOT NULL, finished_at TEXT,
-    status TEXT, summary TEXT,
-    processed INTEGER DEFAULT 0, warnings INTEGER DEFAULT 0, errors INTEGER DEFAULT 0,
-    params_json TEXT, output_files_json TEXT
-);
-CREATE TABLE IF NOT EXISTS execution_events (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    execution_id INTEGER NOT NULL, ts TEXT, level TEXT, message TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_events_exec ON execution_events(execution_id);
-CREATE TABLE IF NOT EXISTS module_settings (
-    module_id TEXT PRIMARY KEY, settings_json TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS favorites (module_id TEXT PRIMARY KEY);
-"""
 
 
 def _now() -> str:
@@ -93,7 +74,7 @@ class HistoryService:
     def __init__(self, db_file):
         self.db_file = str(db_file)
         with self._conn() as c:
-            c.executescript(SCHEMA)
+            apply_migrations(c)
             # execuções que ficaram "em andamento" por fechamento abrupto do app
             c.execute(
                 "UPDATE executions SET status=? WHERE status=?",

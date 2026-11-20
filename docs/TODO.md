@@ -242,14 +242,14 @@ FT-001 → FT-002 → FT-005 → FT-003 → FT-004 → FT-006 → FT-007
 
 ### FT-016 — Versionar e migrar o esquema SQLite
 
-- [ ] **FT-016 — Versionar e migrar o esquema SQLite**
+- [x] **FT-016 — Versionar e migrar o esquema SQLite**
   - **Descrição:** adicionar `PRAGMA user_version` e migrações incrementais para o banco do histórico.
   - **Problema/necessidade:** AUD-09; evolução do esquema hoje é manual.
   - **Arquivos/componentes:** `core/history_service.py`, novo módulo de migrações, testes.
   - **Prioridade:** P1 · **Complexidade:** média · **Dependências:** —
   - **Critérios de aceite:** banco novo nasce na versão atual; banco antigo migra sem perder dados; migração é idempotente; falha não deixa esquema parcial; teste com banco vazio e “antigo”.
   - **Testes necessários:** migração de cada versão; reexecução; banco corrompido.
-  - **Status:** pendente
+  - **Status:** concluída
 
 ### FT-017 — Persistir detalhes e artefatos das execuções
 
