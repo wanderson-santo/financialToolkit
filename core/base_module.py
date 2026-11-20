@@ -37,9 +37,14 @@ def validate_status(status: str) -> str:
     return status
 
 
+PARAM_KINDS = ("file", "folder", "text", "multiline", "choice", "bool", "column", "columns")
+
+
 @dataclass
 class ParamSpec:
     """Descreve um campo do formulário de um módulo.
+
+    ``kind`` deve ser um de ``PARAM_KINDS``.
 
     kind:
       file     - seleção de arquivo

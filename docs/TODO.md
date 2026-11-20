@@ -183,14 +183,14 @@ FT-001 → FT-002 → FT-005 → FT-003 → FT-004 → FT-006 → FT-007
 
 ### FT-011 — Validar metadados de módulo no registro
 
-- [ ] **FT-011 — Validar metadados de módulo no registro**
+- [x] **FT-011 — Validar metadados de módulo no registro**
   - **Descrição:** validar no `build_registry()`/teste que `kind` é permitido, choices existem, sources apontam para parâmetros válidos e IDs/chaves são únicos.
   - **Problema/necessidade:** AUD-12; `ValueError` só aparece ao abrir a página.
   - **Arquivos/componentes:** `app/module_registry.py`, `core/base_module.py`, `tests/test_modules.py`.
   - **Prioridade:** P1 · **Complexidade:** pequena · **Dependências:** —
   - **Critérios de aceite:** registro rejeita módulo inválido com mensagem clara; teste com módulo malformado; módulos atuais passam.
   - **Testes necessários:** fixtures de `kind` inválido, choice vazia, source inexistente, chave duplicada.
-  - **Status:** pendente
+  - **Status:** concluída
 
 ### FT-012 — Coordenar operações mutáveis simultâneas
 

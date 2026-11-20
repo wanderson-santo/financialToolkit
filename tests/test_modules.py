@@ -9,8 +9,9 @@ from unittest import mock
 import pandas as pd
 from openpyxl import load_workbook
 
-from app.module_registry import build_registry
-from core.base_module import CANCELLED, SUCCESS
+from app.module_registry import ModuleRegistry, build_registry
+from core.base_module import CANCELLED, SUCCESS, BaseModule, ParamSpec, build_result
+from core.categories import CATEGORY_FILES
 from core.exceptions import ToolkitError, ValidationError
 from core.execution_context import ExecutionContext
 from modules.files import duplicate_finder
@@ -401,7 +402,26 @@ class CnpjModuleTests(TempDirCase):
         self.assertEqual(list(out.columns)[-3:], ["CNPJ_Formatado", "CNPJ_Situacao", "CNPJ_Duplicado_Linhas"])
 
 
+class _StubModule(BaseModule):
+    module_id = "stub"
+    name = "Módulo de teste"
+    category = CATEGORY_FILES
+    params = []
+
+    def preview(self, inputs, ctx):
+        return build_result("prévia", 0)
+
+    def execute(self, inputs, ctx):
+        return build_result("ok", 0)
+
+
 class RegistryTests(unittest.TestCase):
+    def _module(self, **attrs):
+        module = _StubModule()
+        for key, value in attrs.items():
+            setattr(module, key, value)
+        return module
+
     def test_ids_unicos_e_params(self):
         reg = build_registry()
         ids = [m.module_id for m in reg.modules()] + [p.module_id for p in reg.planned()]
@@ -414,6 +434,58 @@ class RegistryTests(unittest.TestCase):
                     self.assertIn(p.source, keys)
                 if p.kind == "choice":
                     self.assertTrue(p.choices)
+
+    def test_registro_rejeita_kind_invalido(self):
+        module = self._module(params=[ParamSpec("arquivo", "Arquivo", "pasta")])
+        with self.assertRaises(ValueError) as ctx:
+            ModuleRegistry().register(module)
+        self.assertIn("parâmetro 'arquivo'", str(ctx.exception))
+        self.assertIn("tipo desconhecido", str(ctx.exception))
+
+    def test_registro_rejeita_choice_sem_opcoes(self):
+        module = self._module(params=[ParamSpec("formato", "Formato", "choice", choices=[])])
+        with self.assertRaises(ValueError) as ctx:
+            ModuleRegistry().register(module)
+        self.assertIn("choices", str(ctx.exception))
+
+    def test_registro_rejeita_source_inexistente(self):
+        module = self._module(params=[
+            ParamSpec("coluna", "Coluna", "column", source="planilha"),
+        ])
+        with self.assertRaises(ValueError) as ctx:
+            ModuleRegistry().register(module)
+        self.assertIn("parâmetro inexistente", str(ctx.exception))
+
+    def test_registro_rejeita_source_que_nao_e_arquivo(self):
+        module = self._module(params=[
+            ParamSpec("texto", "Texto", "text"),
+            ParamSpec("coluna", "Coluna", "column", source="texto"),
+        ])
+        with self.assertRaises(ValueError) as ctx:
+            ModuleRegistry().register(module)
+        self.assertIn("parâmetro de arquivo", str(ctx.exception))
+
+    def test_registro_rejeita_chave_duplicada(self):
+        module = self._module(params=[
+            ParamSpec("coluna", "Coluna 1", "text"),
+            ParamSpec("coluna", "Coluna 2", "text"),
+        ])
+        with self.assertRaises(ValueError) as ctx:
+            ModuleRegistry().register(module)
+        self.assertIn("duplicadas", str(ctx.exception))
+
+    def test_registro_rejeita_modulo_duplicado(self):
+        reg = ModuleRegistry()
+        reg.register(self._module())
+        with self.assertRaises(ValueError) as ctx:
+            reg.register(self._module())
+        self.assertIn("Módulo duplicado", str(ctx.exception))
+
+    def test_registro_rejeita_categoria_invalida(self):
+        module = self._module(category="Categoria inexistente")
+        with self.assertRaises(ValueError) as ctx:
+            ModuleRegistry().register(module)
+        self.assertIn("categoria inválida", str(ctx.exception))
 
 
 if __name__ == "__main__":
