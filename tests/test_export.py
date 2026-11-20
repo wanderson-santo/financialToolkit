@@ -1,8 +1,9 @@
 import csv
 
+import pandas as pd
 from openpyxl import load_workbook
 
-from core.export_service import export_rows
+from core.export_service import export_rows, export_sheets
 from tests.helpers import TempDirCase
 
 
@@ -57,3 +58,46 @@ class ExportSecurityTests(TempDirCase):
         export_rows([{"=cmd": "x", "@cmd": "y", "seguro": "z"}], path)
         ws = load_workbook(path).active
         self.assertEqual([c.value for c in ws[1]], ["'=cmd", "'@cmd", "seguro"])
+
+    def test_abas_truncadas_nao_se_sobrescrevem(self):
+        base = "A" * 31
+        path = self.tmp / "abas.xlsx"
+        export_sheets(
+            {base + "1": pd.DataFrame({"v": [1]}), base + "2": pd.DataFrame({"v": [2]})},
+            path,
+        )
+        wb = load_workbook(path)
+        self.assertEqual(wb.sheetnames, [base, "A" * 29 + "_2"])
+        self.assertEqual(wb[base]["A2"].value, 1)
+        self.assertEqual(wb["A" * 29 + "_2"]["A2"].value, 2)
+
+    def test_abas_com_mesmo_nome_ignorando_maiusculas(self):
+        path = self.tmp / "abas.xlsx"
+        export_sheets(
+            {"Dados": pd.DataFrame({"v": [1]}), "dados": pd.DataFrame({"v": [2]})},
+            path,
+        )
+        wb = load_workbook(path)
+        self.assertEqual(wb.sheetnames, ["Dados", "dados_2"])
+        self.assertEqual(wb["Dados"]["A2"].value, 1)
+        self.assertEqual(wb["dados_2"]["A2"].value, 2)
+
+    def test_nome_vazio_e_caracteres_invalidos(self):
+        path = self.tmp / "abas.xlsx"
+        export_sheets(
+            {
+                "": pd.DataFrame({"v": [1]}),
+                "a/b:c*?[]\\": pd.DataFrame({"v": [2]}),
+                "Planilha": pd.DataFrame({"v": [3]}),
+            },
+            path,
+        )
+        wb = load_workbook(path)
+        self.assertEqual(len(wb.sheetnames), 3)
+        self.assertEqual(wb.sheetnames[0], "Planilha")
+        self.assertEqual(wb.sheetnames[2], "Planilha_2")
+        for name in wb.sheetnames:
+            with self.subTest(name=name):
+                self.assertLessEqual(len(name), 31)
+                self.assertFalse(any(ch in name for ch in "[]:*?/\\"))
+        self.assertEqual([wb[name]["A2"].value for name in wb.sheetnames], [1, 2, 3])

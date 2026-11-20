@@ -172,14 +172,14 @@ FT-001 → FT-002 → FT-005 → FT-003 → FT-004 → FT-006 → FT-007
 
 ### FT-010 — Evitar colisão de nomes de abas na exportação
 
-- [ ] **FT-010 — Evitar colisão de nomes de abas na exportação**
+- [x] **FT-010 — Evitar colisão de nomes de abas na exportação**
   - **Descrição:** deduplicar nomes de aba após sanitização/truncamento, garantindo que nenhum DataFrame seja perdido.
   - **Problema/necessidade:** AUD-21; segunda aba longa sobrescreve a primeira.
   - **Arquivos/componentes:** `core/export_service.py`, testes de exportação.
   - **Prioridade:** P1 · **Complexidade:** pequena · **Dependências:** —
   - **Critérios de aceite:** nomes colididos viram `nome`, `nome_2`, …; todas as abas estão presentes; teste com nomes >31 caracteres.
   - **Testes necessários:** colisão exata após truncamento; nome vazio; caracteres inválidos.
-  - **Status:** pendente
+  - **Status:** concluída
 
 ### FT-011 — Validar metadados de módulo no registro
 

@@ -12,6 +12,38 @@ from .normalizers import parse_number
 
 NUMBER_FORMAT = "#,##0.00"
 
+_INVALID_SHEET_CHARS = re.compile(r"[\[\]:*?/\\]")
+_MAX_SHEET_NAME = 31
+
+
+def _sheet_base_name(name: str) -> str:
+    """Sanitiza e trunca um nome de aba sem ainda considerar colisões."""
+    clean = _INVALID_SHEET_CHARS.sub("-", str(name or ""))[:_MAX_SHEET_NAME]
+    return clean or "Planilha"
+
+
+def _unique_sheet_names(names) -> dict[str, str]:
+    """Mapeia cada chave para um nome de aba único, preservando a ordem.
+
+    A comparação ignora maiúsculas/minúsculas porque o Excel não diferencia
+    ``Dados`` de ``dados``. Colisões recebem ``_2``, ``_3``… sem ultrapassar
+    31 caracteres.
+    """
+    used: set[str] = set()
+    mapping: dict[str, str] = {}
+    for name in names:
+        base = _sheet_base_name(name)
+        candidate = base
+        counter = 2
+        while candidate.casefold() in used:
+            suffix = f"_{counter}"
+            candidate = base[: _MAX_SHEET_NAME - len(suffix)] + suffix
+            counter += 1
+        used.add(candidate.casefold())
+        mapping[name] = candidate
+    return mapping
+
+
 _INVISIBLE_START = "\ufeff\u200b\u200c\u200d\u2060\u00ad"
 
 
@@ -68,17 +100,21 @@ def export_sheets(
 ) -> Path:
     """Grava um XLSX com cabeçalho congelado e largura de coluna ajustada.
 
+    Nomes de aba são sanitizados, truncados em 31 caracteres e deduplicados
+    (``nome``, ``nome_2``…), inclusive quando diferem apenas por maiúsculas.
+
     Toda célula textual passa por :func:`_protect`: conteúdo que poderia ser
     interpretado como fórmula recebe um apóstrofo inicial. Números nativos não
     são alterados.
     """
     path = Path(path)
     number_columns = number_columns or {}
+    sheet_names = _unique_sheet_names(sheets)
     with pd.ExcelWriter(
         path, engine="openpyxl", date_format=date_format, datetime_format=f"{date_format} HH:MM:SS"
     ) as writer:
         for name, df in sheets.items():
-            sheet_name = re.sub(r"[\[\]:*?/\\]", "-", name)[:31] or "Planilha"
+            sheet_name = sheet_names[name]
             original_columns = list(df.columns)
             df = _protect(df)
             df.to_excel(writer, sheet_name=sheet_name, index=False)
