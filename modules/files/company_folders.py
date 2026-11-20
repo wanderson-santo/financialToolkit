@@ -9,7 +9,9 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from core.base_module import BaseModule, Issue, ParamSpec, Result, build_result
+from core.base_module import (
+    CANCELLED, BaseModule, Issue, ParamSpec, Result, build_result,
+)
 from core.categories import CATEGORY_FILES
 from core.exceptions import CancelledError, ValidationError
 from core.file_service import sanitize_folder_name
@@ -155,7 +157,6 @@ class CompanyFolders(BaseModule):
             f"{created} pasta(s) criada(s), {existing} já existia(m), {errors} erro(s). "
             f"{inactive} linha(s) ignoradas por situação, {repeated} nome(s) repetido(s) agrupados.",
             processed=created + existing, warnings=unnamed, errors=errors, details=rows,
+            status=CANCELLED if cancelled else None,
         )
-        if cancelled:
-            result.status = "cancelled"
         return result

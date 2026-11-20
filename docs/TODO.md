@@ -161,14 +161,14 @@ FT-001 → FT-002 → FT-005 → FT-003 → FT-004 → FT-006 → FT-007
 
 ### FT-009 — Padronizar status de resultado e cancelamento
 
-- [ ] **FT-009 — Padronizar status de resultado e cancelamento**
+- [x] **FT-009 — Padronizar status de resultado e cancelamento**
   - **Descrição:** usar constantes/helper para todos os status e permitir que `build_result` represente cancelamento/parcial sem mutação de string.
   - **Problema/necessidade:** AUD-33; strings soltas `"cancelled"`.
   - **Arquivos/componentes:** `core/base_module.py`, `modules/files/*.py`, `modules/spreadsheets/*.py`, `modules/finance/*.py`, testes.
   - **Prioridade:** P1 · **Complexidade:** pequena · **Dependências:** —
   - **Critérios de aceite:** nenhum literal de status fora de `core/base_module.py`; resultado inválido é rejeitado/testado; histórico exibe corretamente; testes de cada status.
   - **Testes necessários:** unidade de `build_result`/cancelamento; regressão dos módulos que cancelam.
-  - **Status:** pendente
+  - **Status:** concluída
 
 ### FT-010 — Evitar colisão de nomes de abas na exportação
 

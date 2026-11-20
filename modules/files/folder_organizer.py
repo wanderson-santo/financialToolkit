@@ -9,7 +9,9 @@ from __future__ import annotations
 from collections import Counter
 from pathlib import Path
 
-from core.base_module import BaseModule, Issue, ParamSpec, Result, build_result
+from core.base_module import (
+    CANCELLED, BaseModule, Issue, ParamSpec, Result, build_result,
+)
 from core.categories import CATEGORY_FILES
 from core.exceptions import CancelledError, ValidationError
 from core.file_service import move_safe, sanitize_folder_name
@@ -159,7 +161,6 @@ class FolderOrganizer(BaseModule):
             f"{moved} arquivo(s) movido(s) em {base}; {errors} erro(s)."
             + (" Execução cancelada antes de terminar." if cancelled else ""),
             processed=moved, errors=errors, details=details,
+            status=CANCELLED if cancelled else None,
         )
-        if cancelled:
-            result.status = "cancelled"
         return result

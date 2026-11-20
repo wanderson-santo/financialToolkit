@@ -11,6 +11,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
+RUNNING = "running"
 SUCCESS = "success"
 PARTIAL = "partial_success"
 FAILED = "failed"
@@ -22,9 +23,18 @@ STATUS_LABELS = {
     PARTIAL: "Concluído com erros",
     FAILED: "Falhou",
     CANCELLED: "Cancelado",
-    "running": "Em andamento",
+    RUNNING: "Em andamento",
     INTERRUPTED: "Interrompido",
 }
+
+RESULT_STATUSES = frozenset({SUCCESS, PARTIAL, FAILED, CANCELLED, INTERRUPTED})
+
+
+def validate_status(status: str) -> str:
+    """Garante que o status é um resultado conhecido; devolve o próprio status."""
+    if status not in RESULT_STATUSES:
+        raise ValueError(f"Status de resultado inválido: {status!r}")
+    return status
 
 
 @dataclass
@@ -73,6 +83,8 @@ class Issue:
 
 @dataclass
 class Result:
+    """Resultado de uma execução. `status` deve ser um de ``RESULT_STATUSES``."""
+
     status: str = SUCCESS
     summary: str = ""
     processed: int = 0
@@ -82,6 +94,9 @@ class Result:
     details: list[dict] = field(default_factory=list)
     is_preview: bool = False
 
+    def __post_init__(self) -> None:
+        validate_status(self.status)
+
 
 def build_result(
     summary: str,
@@ -90,14 +105,16 @@ def build_result(
     errors: int = 0,
     output_files: list[str] | None = None,
     details: list[dict] | None = None,
+    status: str | None = None,
 ) -> Result:
-    """Monta o Result calculando o status a partir dos contadores."""
-    if errors == 0:
-        status = SUCCESS
-    elif processed > 0:
-        status = PARTIAL
-    else:
-        status = FAILED
+    """Monta o Result. Um `status` explícito tem prioridade sobre os contadores."""
+    if status is None:
+        if errors == 0:
+            status = SUCCESS
+        elif processed > 0:
+            status = PARTIAL
+        else:
+            status = FAILED
     return Result(
         status=status,
         summary=summary,

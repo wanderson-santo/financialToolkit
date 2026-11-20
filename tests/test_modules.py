@@ -10,6 +10,7 @@ import pandas as pd
 from openpyxl import load_workbook
 
 from app.module_registry import build_registry
+from core.base_module import CANCELLED, SUCCESS
 from core.exceptions import ToolkitError, ValidationError
 from core.execution_context import ExecutionContext
 from modules.files import duplicate_finder
@@ -45,7 +46,7 @@ class OrganizerTests(TempDirCase):
         self.assertTrue((self.tmp / "in" / "nota.pdf").exists())  # nada movido
 
         r = m.execute(self.inputs(), self.ctx)
-        self.assertEqual((r.status, r.processed, r.errors), ("success", 4, 0))
+        self.assertEqual((r.status, r.processed, r.errors), (SUCCESS, 4, 0))
         self.assertTrue((self.tmp / "in" / "Bradesco" / "Extrato_Bradesco.pdf").exists())
         self.assertFalse((self.tmp / "in" / "nota.pdf").exists())
 
@@ -127,7 +128,7 @@ class DuplicateTests(TempDirCase):
             time.sleep(0.02)
         r = DuplicateFinder().execute(self.move_inputs(), _CancelAfterFirstMove())
 
-        self.assertEqual((r.status, r.processed), ("cancelled", 1))
+        self.assertEqual((r.status, r.processed), (CANCELLED, 1))
         with Path(r.output_files[0]).open(encoding="utf-8-sig", newline="") as fh:
             rows = list(csv.reader(fh, delimiter=";"))
         statuses = sorted(row[3] for row in rows[1:])
@@ -150,7 +151,7 @@ class DuplicateTests(TempDirCase):
 
         inp["action"] = ACTION_MOVE
         r = m.execute(inp, self.ctx)
-        self.assertEqual((r.status, r.processed), ("success", 1))
+        self.assertEqual((r.status, r.processed), (SUCCESS, 1))
         self.assertTrue((self.tmp / "p/a.txt").exists())          # o mais antigo fica
         self.assertFalse((self.tmp / "p/sub/b.txt").exists())
         self.assertTrue((self.tmp / "p/_q/b.txt").exists())

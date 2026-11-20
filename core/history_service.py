@@ -10,6 +10,9 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
+from .base_module import (
+    CANCELLED, FAILED, INTERRUPTED, PARTIAL, RUNNING, SUCCESS,
+)
 from .exceptions import ToolkitError
 from .logging_service import get_logger
 
@@ -92,7 +95,10 @@ class HistoryService:
         with self._conn() as c:
             c.executescript(SCHEMA)
             # execuções que ficaram "em andamento" por fechamento abrupto do app
-            c.execute("UPDATE executions SET status='interrupted' WHERE status='running'")
+            c.execute(
+                "UPDATE executions SET status=? WHERE status=?",
+                (INTERRUPTED, RUNNING),
+            )
 
     @classmethod
     def open_with_recovery(cls, db_file, on_recover=None) -> "HistoryService":
@@ -138,7 +144,7 @@ class HistoryService:
             cur = c.execute(
                 "INSERT INTO executions (run_id, module_id, module_name, module_version, mode,"
                 " started_at, status, params_json) VALUES (?,?,?,?,?,?,?,?)",
-                (run_id, module.module_id, module.name, module.version, mode, _now(), "running",
+                (run_id, module.module_id, module.name, module.version, mode, _now(), RUNNING,
                  json.dumps(params, ensure_ascii=False, default=str)),
             )
             return int(cur.lastrowid)
@@ -185,12 +191,12 @@ class HistoryService:
         with self._conn() as c:
             r = c.execute(
                 "SELECT COUNT(*) AS total,"
-                " SUM(CASE WHEN status='success' AND warnings=0 THEN 1 ELSE 0 END) AS ok,"
-                " SUM(CASE WHEN status='partial_success' OR (status='success' AND warnings>0)"
-                "     THEN 1 ELSE 0 END) AS alerts,"
-                " SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS failed,"
-                " SUM(CASE WHEN status='cancelled' THEN 1 ELSE 0 END) AS cancelled"
-                " FROM executions WHERE mode='execute'"
+                " SUM(CASE WHEN status=? AND warnings=0 THEN 1 ELSE 0 END) AS ok,"
+                " SUM(CASE WHEN status=? OR (status=? AND warnings>0) THEN 1 ELSE 0 END) AS alerts,"
+                " SUM(CASE WHEN status=? THEN 1 ELSE 0 END) AS failed,"
+                " SUM(CASE WHEN status=? THEN 1 ELSE 0 END) AS cancelled"
+                " FROM executions WHERE mode='execute'",
+                (SUCCESS, PARTIAL, SUCCESS, FAILED, CANCELLED),
             ).fetchone()
             return {k: int(r[k] or 0) for k in ("total", "ok", "alerts", "failed", "cancelled")}
 

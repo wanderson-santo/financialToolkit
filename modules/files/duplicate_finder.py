@@ -12,7 +12,9 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-from core.base_module import BaseModule, ParamSpec, Result, build_result
+from core.base_module import (
+    CANCELLED, BaseModule, ParamSpec, Result, build_result,
+)
 from core.categories import CATEGORY_FILES
 from core.exceptions import CancelledError, ToolkitError
 from core.file_service import hash_file, iter_files, move_to, unique_path
@@ -251,7 +253,6 @@ class DuplicateFinder(BaseModule):
         result = build_result(
             summary, processed=moved, warnings=unreadable, errors=errors,
             output_files=[str(manifest_path)], details=rows,
+            status=CANCELLED if cancelled else None,
         )
-        if cancelled:
-            result.status = "cancelled"
         return result

@@ -2,7 +2,10 @@ import sqlite3
 import unittest
 from datetime import date, datetime
 
-from core.base_module import CANCELLED, INTERRUPTED, Result
+from core.base_module import (
+    CANCELLED, FAILED, INTERRUPTED, PARTIAL, RUNNING, STATUS_LABELS, SUCCESS,
+    Result, build_result, validate_status,
+)
 from core.history_service import HistoryService
 from core.normalizers import (
     as_text, clean_text, cnpj_is_valid, format_cnpj, is_blank, normalize_cnpj, parse_date, parse_number,
@@ -68,6 +71,39 @@ class NormalizerTests(unittest.TestCase):
         self.assertEqual(find_duplicates(["a", "b", "a", ""]), {"a": [0, 2]})
 
 
+class StatusTests(unittest.TestCase):
+    def test_build_result_calcula_pelos_contadores(self):
+        self.assertEqual(build_result("ok", processed=0).status, SUCCESS)
+        self.assertEqual(build_result("ok", processed=0, warnings=2).status, SUCCESS)
+        self.assertEqual(build_result("falhou", processed=0, errors=1).status, FAILED)
+        self.assertEqual(build_result("parcial", processed=2, errors=1).status, PARTIAL)
+
+    def test_build_result_status_explicito_tem_prioridade(self):
+        result = build_result("cancelado", processed=2, errors=3, status=CANCELLED)
+        self.assertEqual(result.status, CANCELLED)
+        self.assertEqual((result.processed, result.errors), (2, 3))
+
+    def test_status_desconhecido_e_rejeitado(self):
+        for invalid in ("", "sucesso", "finished", RUNNING):
+            with self.subTest(status=invalid):
+                with self.assertRaises(ValueError):
+                    build_result("x", processed=0, status=invalid)
+                with self.assertRaises(ValueError):
+                    Result(status=invalid)
+        with self.assertRaises(ValueError):
+            validate_status("bogus")
+
+    def test_todos_os_status_tem_rotulo(self):
+        self.assertEqual(set(STATUS_LABELS), {SUCCESS, PARTIAL, FAILED, CANCELLED, RUNNING, INTERRUPTED})
+        for status, label in STATUS_LABELS.items():
+            with self.subTest(status=status):
+                self.assertTrue(label)
+        for status in (SUCCESS, PARTIAL, FAILED, CANCELLED, INTERRUPTED):
+            self.assertEqual(validate_status(status), status)
+        # "running" é estado do histórico, não status de resultado.
+        self.assertNotIn(RUNNING, {SUCCESS, PARTIAL, FAILED, CANCELLED, INTERRUPTED})
+
+
 class HistoryTests(TempDirCase):
     def test_historico_config_favoritos(self):
         h = HistoryService(self.tmp / "t.db")
@@ -76,9 +112,9 @@ class HistoryTests(TempDirCase):
             module_id, name, version = "m1", "Módulo 1", "1.0"
 
         exec_id = h.start(M, "execute", {"a": 1})
-        h.finish(exec_id, Result(status="success", summary="ok", processed=3, warnings=1),
+        h.finish(exec_id, Result(status=SUCCESS, summary="ok", processed=3, warnings=1),
                  [("2026-01-01 10:00:00", "info", "olá")])
-        self.assertEqual(h.get(exec_id)["status"], "success")
+        self.assertEqual(h.get(exec_id)["status"], SUCCESS)
         self.assertEqual(h.events(exec_id)[0]["message"], "olá")
         self.assertEqual(h.stats()["alerts"], 1)
         h.start(M, "preview", {})
@@ -91,7 +127,7 @@ class HistoryTests(TempDirCase):
         self.assertFalse(h.toggle_favorite("m1"))
 
         h2 = HistoryService(self.tmp / "t.db")  # reabrir marca "running" como interrompido
-        self.assertEqual(h2.recent(1)[0]["status"], "interrupted")
+        self.assertEqual(h2.recent(1)[0]["status"], INTERRUPTED)
 
     def test_finish_registra_cancelamento_e_interrupcao(self):
         h = HistoryService(self.tmp / "t.db")
@@ -117,6 +153,28 @@ class HistoryTests(TempDirCase):
         self.assertEqual(inter["status"], INTERRUPTED)
         self.assertIsNotNone(inter["finished_at"])
         self.assertEqual(h.events(interrupted_id)[0]["message"], "interrompido")
+
+    def test_stats_reconhece_todos_os_status(self):
+        h = HistoryService(self.tmp / "t.db")
+
+        class M:
+            module_id, name, version = "m1", "Módulo 1", "1.0"
+
+        def finish(status, warnings=0):
+            exec_id = h.start(M, "execute", {})
+            h.finish(exec_id, build_result("x", processed=1, warnings=warnings, status=status), [])
+
+        finish(SUCCESS)
+        finish(SUCCESS, warnings=1)
+        finish(PARTIAL)
+        finish(FAILED)
+        finish(CANCELLED)
+        finish(INTERRUPTED)
+
+        self.assertEqual(
+            h.stats(),
+            {"total": 6, "ok": 1, "alerts": 2, "failed": 1, "cancelled": 1},
+        )
 
     def test_recupera_banco_corrompido(self):
         db = self.tmp / "corrompido.db"
