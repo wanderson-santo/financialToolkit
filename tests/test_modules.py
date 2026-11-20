@@ -1,12 +1,18 @@
+import csv
+import threading
 import time
 import unittest
 from datetime import date
 from pathlib import Path
+from unittest import mock
 
 import pandas as pd
 from openpyxl import load_workbook
 
 from app.module_registry import build_registry
+from core.exceptions import ToolkitError, ValidationError
+from core.execution_context import ExecutionContext
+from modules.files import duplicate_finder
 from modules.files.company_folders import CompanyFolders
 from modules.files.duplicate_finder import ACTION_MOVE, ACTION_REPORT, DuplicateFinder
 from modules.files.folder_organizer import FolderOrganizer, parse_rules
@@ -14,7 +20,6 @@ from modules.finance.cnpj_validator import CnpjValidator
 from modules.spreadsheets.cleaner import SheetCleaner
 from modules.spreadsheets.comparator import SheetComparator, same_value
 from tests.helpers import TempDirCase
-from core.exceptions import ValidationError
 
 
 class OrganizerTests(TempDirCase):
@@ -58,7 +63,78 @@ class OrganizerTests(TempDirCase):
         self.assertTrue(any(i.level == "error" for i in issues))
 
 
+class _CancelAfterFirstMove(ExecutionContext):
+    def __init__(self):
+        self.event = threading.Event()
+        super().__init__("test", cancel_event=self.event)
+
+    def progress(self, current, total, step=""):
+        super().progress(current, total, step)
+        if step == "Movendo duplicatas" and current == 1:
+            self.event.set()
+
+
 class DuplicateTests(TempDirCase):
+    def move_inputs(self):
+        return {"folder": str(self.tmp / "p"), "recursive": True, "action": ACTION_MOVE,
+                "keep": "Mais antigo (data de modificação)", "quarantine": "_q"}
+
+    def test_manifesto_existe_antes_do_primeiro_move(self):
+        self.write("p/a.txt", b"mesmo conteudo")
+        time.sleep(0.02)
+        self.write("p/sub/b.txt", b"mesmo conteudo")
+        seen = []
+        real_move = duplicate_finder.move_to
+
+        def checked_move(src, dest):
+            manifests = list(Path(dest).parent.glob("manifesto_*.csv"))
+            seen.append(bool(manifests))
+            self.assertEqual(len(manifests), 1)
+            with manifests[0].open(encoding="utf-8-sig", newline="") as fh:
+                rows = list(csv.reader(fh, delimiter=";"))
+            self.assertEqual(rows[0], ["grupo", "origem", "destino", "status"])
+            self.assertTrue(any(row[1] == str(src) and row[2] == str(dest) for row in rows[1:]))
+            return real_move(src, dest)
+
+        with mock.patch.object(duplicate_finder, "move_to", new=checked_move):
+            r = DuplicateFinder().execute(self.move_inputs(), self.ctx)
+
+        self.assertEqual(seen, [True])
+        self.assertEqual(r.processed, 1)
+        with Path(r.output_files[0]).open(encoding="utf-8-sig", newline="") as fh:
+            rows = list(csv.reader(fh, delimiter=";"))
+        moved = [row for row in rows[1:] if row[3] == "movida"]
+        self.assertEqual(len(moved), 1)
+        self.assertEqual(moved[0][1], str(self.tmp / "p/sub/b.txt"))
+        self.assertEqual(moved[0][2], str(self.tmp / "p/_q/b.txt"))
+
+    def test_falha_ao_gravar_manifesto_aborta_antes_de_mover(self):
+        self.write("p/a.txt", b"mesmo conteudo")
+        time.sleep(0.02)
+        self.write("p/sub/b.txt", b"mesmo conteudo")
+        with mock.patch.object(duplicate_finder, "_write_manifest", side_effect=OSError("disco cheio")):
+            with self.assertRaises(ToolkitError) as ctx:
+                DuplicateFinder().execute(self.move_inputs(), self.ctx)
+
+        self.assertIn("Nenhum arquivo foi movido", str(ctx.exception))
+        self.assertTrue((self.tmp / "p/a.txt").exists())
+        self.assertTrue((self.tmp / "p/sub/b.txt").exists())
+        self.assertEqual(list((self.tmp / "p/_q").glob("*.txt")), [])
+
+    def test_cancelamento_apos_primeiro_move_preserva_manifesto(self):
+        for name in ("a.txt", "b.txt", "c.txt"):
+            self.write(f"p/{name}", b"mesmo conteudo")
+            time.sleep(0.02)
+        r = DuplicateFinder().execute(self.move_inputs(), _CancelAfterFirstMove())
+
+        self.assertEqual((r.status, r.processed), ("cancelled", 1))
+        with Path(r.output_files[0]).open(encoding="utf-8-sig", newline="") as fh:
+            rows = list(csv.reader(fh, delimiter=";"))
+        statuses = sorted(row[3] for row in rows[1:])
+        self.assertEqual(statuses, ["cancelado", "movida"])
+        self.assertEqual(len(list((self.tmp / "p/_q").glob("*.txt"))), 1)
+        self.assertEqual(len(list((self.tmp / "p").glob("*.txt"))), 2)
+
     def test_relatar_e_mover(self):
         self.write("p/a.txt", b"mesmo conteudo")
         time.sleep(0.02)

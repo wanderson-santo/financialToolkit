@@ -1,25 +1,67 @@
 """Detector de arquivos duplicados (mesmo conteúdo, nomes diferentes).
 
 Baseado no script de duplicatas por tamanho + hash. Em vez de excluir, a ação
-opcional MOVE as cópias para uma quarentena e grava um manifesto CSV com
-origem e destino de cada arquivo (permite desfazer).
+opcional MOVE as cópias para uma quarentena. O manifesto (grupo, origem,
+destino e status) é gravado antes do primeiro movimento e atualizado de forma
+atômica; se algo falhar, o estado parcial fica explícito.
 """
 from __future__ import annotations
 
 import csv
+import os
 from datetime import datetime
 from pathlib import Path
 
 from core.base_module import BaseModule, ParamSpec, Result, build_result
 from core.categories import CATEGORY_FILES
-from core.exceptions import CancelledError
-from core.file_service import hash_file, iter_files, move_safe
+from core.exceptions import CancelledError, ToolkitError
+from core.file_service import hash_file, iter_files, move_to, unique_path
 
 ACTION_REPORT = "Apenas relatar"
 ACTION_MOVE = "Mover duplicatas para a quarentena"
 KEEP_OLDEST = "Mais antigo (data de modificação)"
 KEEP_NEWEST = "Mais recente"
 KEEP_SHORT = "Nome mais curto"
+
+MANIFEST_HEADER = ["grupo", "origem", "destino", "status"]
+STATUS_PENDING = "pendente"
+STATUS_MOVED = "movida"
+STATUS_ERROR = "erro"
+STATUS_CANCELLED = "cancelado"
+
+
+def _plan_destinations(dups, quarantine: Path) -> list[tuple[int, Path, Path]]:
+    """Destino único para cada duplicata, antes de qualquer movimentação."""
+    reserved: set[str] = set()
+    plan = []
+    for group_no, src in dups:
+        candidate = quarantine / src.name
+        suffix = 1
+        while candidate.exists() or os.path.normcase(str(candidate)) in reserved:
+            candidate = quarantine / f"{src.stem}_{suffix}{src.suffix}"
+            suffix += 1
+        reserved.add(os.path.normcase(str(candidate)))
+        plan.append((group_no, src, candidate))
+    return plan
+
+
+def _write_manifest(path: Path, rows: list[list]) -> None:
+    """Grava o manifesto de forma atômica (temporário + replace)."""
+    tmp = path.with_name(f".{path.name}.tmp")
+    try:
+        with open(tmp, "w", newline="", encoding="utf-8-sig") as fh:
+            writer = csv.writer(fh, delimiter=";")
+            writer.writerow(MANIFEST_HEADER)
+            writer.writerows(rows)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    finally:
+        if tmp.exists():
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
 
 
 def _pick_keeper(paths: list[Path], stats: dict, mode: str) -> tuple[Path, list[Path]]:
@@ -131,39 +173,84 @@ class DuplicateFinder(BaseModule):
             )
 
         quarantine = self._quarantine_dir(inputs)
-        manifest, moved, errors, cancelled = [], 0, 0, False
+        try:
+            quarantine.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise ToolkitError(
+                f"Não foi possível criar a pasta de quarentena {quarantine}: {exc}"
+            ) from exc
+
+        plan = _plan_destinations(dups, quarantine)
+        manifest_path = unique_path(quarantine / f"manifesto_{datetime.now():%Y%m%d_%H%M%S}.csv")
+        manifest = [
+            [group_no, str(src), str(dest), STATUS_PENDING] for group_no, src, dest in plan
+        ]
+        row_of = {str(src): i for i, (_, src, _) in enumerate(plan)}
+        try:
+            _write_manifest(manifest_path, manifest)
+        except OSError as exc:
+            raise ToolkitError(
+                f"Não foi possível gravar o manifesto em {manifest_path}: {exc}. "
+                "Nenhum arquivo foi movido."
+            ) from exc
+
+        moved, errors, cancelled, manifest_failed = 0, 0, False, False
         outcome: dict[str, str] = {}
-        for i, (group_no, path) in enumerate(dups, start=1):
+        for i, (_, path, dest) in enumerate(plan, start=1):
             try:
                 ctx.check_cancel()
-                ctx.progress(i, len(dups), "Movendo duplicatas")
-                new_path = move_safe(path, quarantine)
-                moved += 1
-                outcome[str(path)] = "Movida para a quarentena"
-                manifest.append([group_no, str(path), str(new_path)])
+                ctx.progress(i, len(plan), "Movendo duplicatas")
+                move_to(path, dest)
             except CancelledError:
                 cancelled = True
                 break
             except OSError as exc:
                 errors += 1
                 outcome[str(path)] = f"Erro: {exc}"
+                manifest[row_of[str(path)]][3] = f"{STATUS_ERROR}: {exc}"
                 ctx.log(f"Erro ao mover '{path.name}': {exc}", "error")
+                try:
+                    _write_manifest(manifest_path, manifest)
+                except OSError as write_exc:
+                    manifest_failed = True
+                    ctx.log(f"Falha ao atualizar o manifesto: {write_exc}", "error")
+                    break
+                continue
+
+            moved += 1
+            outcome[str(path)] = "Movida para a quarentena"
+            manifest[row_of[str(path)]][3] = STATUS_MOVED
+            try:
+                _write_manifest(manifest_path, manifest)
+            except OSError as exc:
+                manifest_failed = True
+                errors += 1
+                outcome[str(path)] = "Movida; manifesto não atualizado"
+                ctx.log(f"Arquivo movido, mas o manifesto não pôde ser atualizado: {exc}", "error")
+                break
+
+        if cancelled and not manifest_failed:
+            for row in manifest:
+                if row[3] == STATUS_PENDING:
+                    row[3] = STATUS_CANCELLED
+            try:
+                _write_manifest(manifest_path, manifest)
+            except OSError as exc:
+                manifest_failed = True
+                ctx.log(f"Falha ao finalizar o manifesto: {exc}", "error")
+
         for row in rows:
             if row["Ação"] == "Duplicata" and row["Arquivo"] in outcome:
                 row["Ação"] = outcome[row["Arquivo"]]
 
-        output_files: list[str] = []
-        if manifest:
-            manifest_path = quarantine / f"manifesto_{datetime.now():%Y%m%d_%H%M%S}.csv"
-            with open(manifest_path, "w", newline="", encoding="utf-8-sig") as f:
-                writer = csv.writer(f, delimiter=";")
-                writer.writerow(["grupo", "origem", "destino"])
-                writer.writerows(manifest)
-            output_files.append(str(manifest_path))
+        summary = f"{moved} duplicata(s) movida(s) para {quarantine} ({mb:.1f} MB); {errors} erro(s)."
+        if cancelled:
+            summary += " Execução cancelada antes de terminar."
+        if manifest_failed:
+            summary += " O manifesto pode estar desatualizado; confira os destinos na quarentena."
         result = build_result(
-            f"{moved} duplicata(s) movida(s) para {quarantine} ({mb:.1f} MB); {errors} erro(s)."
-            + (" Execução cancelada antes de terminar." if cancelled else ""),
-            processed=moved, warnings=unreadable, errors=errors, output_files=output_files, details=rows,
+            summary, processed=moved, warnings=unreadable, errors=errors,
+            output_files=[str(manifest_path)], details=rows,
         )
         if cancelled:
             result.status = "cancelled"

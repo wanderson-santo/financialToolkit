@@ -33,13 +33,22 @@ def unique_path(path) -> Path:
         i += 1
 
 
+def move_to(src, target) -> Path:
+    """Move para um destino já planejado, sem nunca sobrescrever."""
+    target = Path(target)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists():
+        raise FileExistsError(f"Destino já existe: {target}")
+    shutil.move(str(src), str(target))
+    return target
+
+
 def move_safe(src, dest_folder) -> Path:
     """Move o arquivo para a pasta (criando-a) sem nunca sobrescrever."""
     dest_folder = Path(dest_folder)
     dest_folder.mkdir(parents=True, exist_ok=True)
     target = unique_path(dest_folder / Path(src).name)
-    shutil.move(str(src), str(target))
-    return target
+    return move_to(src, target)
 
 
 def hash_file(path, algorithm: str = "sha256", chunk: int = 1024 * 1024) -> str:

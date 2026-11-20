@@ -150,14 +150,14 @@ FT-001 → FT-002 → FT-005 → FT-003 → FT-004 → FT-006 → FT-007
 
 ### FT-008 — Gravar manifesto de duplicatas antes das movimentações
 
-- [ ] **FT-008 — Gravar manifesto de duplicatas antes das movimentações**
+- [x] **FT-008 — Gravar manifesto de duplicatas antes das movimentações**
   - **Descrição:** criar o manifesto (ou journal) antes de mover a primeira cópia e atualizá-lo de forma segura; em falha, manter estado parcial explícito.
   - **Problema/necessidade:** AUD-08; hoje o manifesto é escrito depois, deixando arquivos sem mapa de retorno.
   - **Arquivos/componentes:** `modules/files/duplicate_finder.py`, `core/file_service.py`, testes.
   - **Prioridade:** P0 · **Complexidade:** pequena · **Dependências:** —
   - **Critérios de aceite:** manifesto existe antes do primeiro move; contém grupo, origem e destino; falha de escrita aborta antes de mover; teste de cancelamento/falha.
   - **Testes necessários:** simular falha de manifesto; cancelamento após primeiro move; verificar arquivos e manifesto.
-  - **Status:** pendente
+  - **Status:** concluída
 
 ### FT-009 — Padronizar status de resultado e cancelamento
 
